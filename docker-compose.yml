@@ -1,0 +1,15 @@
+services:
+  ze-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: "no"
+    devices:
+      - /dev/dri:/dev/dri
+    volumes:
+      - ./src:/opt/ze-monitor
+    environment:
+      - ZE_ENABLE_SYSMAN=1
+    privileged: true
+    cap_add:
+      - SYS_ADMIN # Needed for access to l0 sysman on the GPU

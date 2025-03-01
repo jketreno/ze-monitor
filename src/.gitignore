@@ -1,0 +1,8 @@
+ze-monitor
+ze-monitor.g*
+rpmbuild
+debian/ze-monitor
+debian/tmp
+debian/ze-monitor.substvars
+build/
+build.err

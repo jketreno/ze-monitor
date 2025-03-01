@@ -1,0 +1,32 @@
+Name:           ze-monitor
+Version:        VERSION
+Release:        RELEASE%{?dist}
+Summary:        Monitor for ZE
+
+License:        BSD-2
+URL:            https://github.com/jketreno/ze-monitor
+Source0:        %{name}-%{version}.tar.gz
+
+BuildRequires:  gcc-c++, make, ncurses-devel, ze-devel
+Requires:       ncurses-libs, ze-loader
+
+%description
+A utility to monitor ZE components.
+
+%prep
+%setup -q
+
+%build
+make PKG_CHECK=yes BUILD_DIR=build/%{version}-%{release} %{?_smp_mflags}
+
+%install
+mkdir -p %{buildroot}%{_bindir}
+install -m 755 build/%{version}-%{release}/ze-monitor %{buildroot}%{_bindir}/ze-monitor
+
+%files
+%license LICENSE
+%{_bindir}/ze-monitor
+
+%changelog
+* Fri Feb 28 2025 James Ketrenos <james_zemonitor@ketrenos.com> - VERSION-RELEASE
+- Release VERSION-RELEASE
