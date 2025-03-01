@@ -93,6 +93,9 @@ ze-monitor
 Example output:
 
 ```bash
+$ ze-monitor 
+Device 1: 8086:E20B (Intel(R) Graphics [0xe20b])
+Device 2: 8086:A780 (Intel(R) UHD Graphics 770)
 ```
 
 ## Show details for a given device
@@ -104,9 +107,38 @@ sudo ze-monitor --info --device ( PCIID | # | BDF | UUID )
 Example output:
 
 ```bash
+$ ze-monitor --device 2 --info
+Device: 8086:A780 (Intel(R) UHD Graphics 770)
+ UUID: 868080A7-0400-0000-0002-000000000000
+ BDF: 0000:0000:0002:0000
+ PCI ID: 8086:A780
+ Subdevices: 0
+ Serial Number: unknown
+ Board Number: unknown
+ Brand Name: unknown
+ Model Name: Intel(R) UHD Graphics 770
+ Vendor Name: Intel(R) Corporation
+ Driver Version: 0CB7EFCAD5695B7EC5C8CE6
+ Type: GPU
+ Is integrated with host: Yes
+ Is a sub-device: No
+ Supports error correcting memory: No
+ Supports on-demand page-faulting: No
+ Engines: 7
+   ZES_ENGINE_GROUP_RENDER_SINGLE
+   ZES_ENGINE_GROUP_MEDIA_DECODE_SINGLE
+   ZES_ENGINE_GROUP_MEDIA_DECODE_SINGLE
+   ZES_ENGINE_GROUP_MEDIA_ENCODE_SINGLE
+   ZES_ENGINE_GROUP_MEDIA_ENCODE_SINGLE
+   ZES_ENGINE_GROUP_COPY_SINGLE
+   ZES_ENGINE_GROUP_MEDIA_ENHANCEMENT_SINGLE
 ```
 
+NOTE: If you run it without 'sudo', no engines will be reported.
+
 ## Monitor a given device
+
+WIP
 
 ```
 sudo ze-monitor --device ( PCIID | # | BDF | UUID ) \
@@ -116,9 +148,8 @@ sudo ze-monitor --device ( PCIID | # | BDF | UUID ) \
 If `--one-shot` is listed, --interval will be used as a one-shot
 to gather statistics.
 
-Example output: `ze-monitor --device 1 --interval 1000 --output txt`
-
 ```bash
+$ ze-monitor --device 1 --interval 1000 --output txt
 ```
 
 

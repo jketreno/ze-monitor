@@ -34,7 +34,7 @@ and
 #include <variant>              // for get
 #include <vector>               // for vector
 
-void show_device_properties(uint32_t index, const Device *device)
+void show_device_properties(const Device *device)
 {
     const char *type = nullptr;
 
@@ -44,7 +44,12 @@ void show_device_properties(uint32_t index, const Device *device)
 
     std::string uuid_str = uuid_to_string(&ext_properties->uuid);
     std::ostringstream output;
-    output << "Device " << index << ": " << uuid_str << std::endl;
+    printf("Device: %04X:%04X (%s)\n",
+           device->getDeviceProperties()->core.vendorId,
+           device->getDeviceProperties()->core.deviceId,
+           device->getDeviceProperties()->modelName);
+
+    output << " UUID: " << uuid_str << std::endl;
 
     output << " BDF: "
            << std::hex << std::uppercase
@@ -97,36 +102,22 @@ void show_device_properties(uint32_t index, const Device *device)
     printf("%s", output.str().c_str());
 }
 
-ze_result_t show_engine_group_properties(uint32_t index, zes_engine_handle_t hEngine)
+void show_engine_group_properties(const Engine *engine)
 {
-    zes_engine_properties_t engineProperties = {};
-    engineProperties.stype = ZES_STRUCTURE_TYPE_ENGINE_PROPERTIES;
-    ze_result_t ret;
-
-    ret = zesEngineGetProperties(hEngine, &engineProperties);
-    if (ret != ZE_RESULT_SUCCESS)
+    printf("   %s", engine_type_to_str(engine->getEngineProperties()->type));
+    if (engine->getEngineProperties()->onSubdevice)
     {
-        return ret;
+        printf(" (Sub-device ID: %04X)", engine->getEngineProperties()->subdeviceId);
     }
-
-    printf(" Engine %d:\n", index);
-    printf("  Type: %s\n", engine_type_to_str(engineProperties.type));
-    printf("  Sub-device: %s\n", engineProperties.onSubdevice ? "Yes" : "No");
-    if (engineProperties.onSubdevice)
-    {
-        printf("  Sub-device ID: %04X\n", engineProperties.subdeviceId);
-    }
-
-    return ZE_RESULT_SUCCESS;
+    printf("\n");
 }
 
-void show_engine_groups(uint32_t index, const Device *device)
+void show_engine_groups(const Device *device)
 {
     uint32_t enginesCount = device->getEngineCount();
     std::ostringstream output;
 
-    output << "Device " << index << ": " << enginesCount << " engines found." << std::endl;
-    wprintw(stdscr, "%s", output.str().c_str());
+    printf(" Engines: %d\n", enginesCount);
     if (enginesCount == 0)
     {
         return;
@@ -134,7 +125,7 @@ void show_engine_groups(uint32_t index, const Device *device)
 
     for (uint32_t i = 0; i < enginesCount; ++i)
     {
-        show_engine_group_properties(i, device->getEngine(i)->getHandle());
+        show_engine_group_properties(device->getEngine(i));
     }
 }
 
@@ -143,8 +134,16 @@ ze_result_t list_devices(std::vector<std::unique_ptr<Device>> &devices)
     // Walk through each device and display properties
     for (uint32_t j = 0; j < devices.size(); ++j)
     {
-        show_device_properties(j, devices[j].get());
-        show_engine_groups(j, devices[j].get());
+        const Device *device = devices[j].get();
+
+        printf("Device %d: %04X:%04X (%s)\n",
+               j + 1,
+               device->getDeviceProperties()->core.vendorId,
+               device->getDeviceProperties()->core.deviceId,
+               device->getDeviceProperties()->modelName);
+
+        //        show_device_properties(devices[j].get());
+        //        show_engine_groups(devices[j].get());
     }
 
     return ZE_RESULT_SUCCESS;
@@ -213,6 +212,9 @@ int32_t find_device_index(arg_search_t search, std::vector<std::unique_ptr<Devic
         bool match = false;
         switch (search.type)
         {
+        case INDEX:
+            match = i + 1 == std::get<uint32_t>(search.data);
+            break;
         case PCIID:
             pciid = std::get<pciid_t>(search.data);
             match = (pciid.vendor == device->getDeviceProperties()->core.vendorId &&
@@ -419,8 +421,9 @@ int main(int argc, char *argv[])
 
     if (showInfo)
     {
-        show_device_properties(0, device);
-        show_engine_groups(0, device);
+        show_device_properties(device);
+        show_engine_groups(device);
+        return 0;
     }
 
     try

@@ -8,6 +8,8 @@ typedef enum arg_enum
     PCIID,
     UUID,
     RENDERID,
+    BDF,
+    INDEX,
     INVALID
 } arg_type_t;
 
@@ -17,7 +19,7 @@ public:
     arg_search_t() : type(INVALID) {}
 
     // Define a variant to store one of the types
-    std::variant<zes_uuid_t, pciid_t, std::string> data;
+    std::variant<zes_uuid_t, pciid_t, std::string, uint32_t> data;
 
     arg_type_t type;
 };
