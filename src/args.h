@@ -18,8 +18,8 @@ public:
     arg_search_t() : type(INVALID) {}
 
     // Define a variant to store one of the types
-    std::variant<zes_uuid_t, pciid_t, std::string, uint32_t> data;
-
+    std::variant<zes_uuid_t, pciid_t, std::string, bdf_t, uint32_t> data;
+    std::string match;
     arg_type_t type;
 };
 

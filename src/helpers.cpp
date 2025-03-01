@@ -1,20 +1,23 @@
-#include <fmt/core.h>
-#include <level_zero/zes_api.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
-#include <unistd.h>
 #include "helpers.h"
-
 #include <array> // Optional: If using std::array for UUID representation
 #include <bitset>
+#include <cstdint>
+#include <filesystem>
+#include <fmt/core.h>
 #include <fstream>
 #include <iomanip> // For std::setw and std::setfill
 #include <iostream>
+#include <level_zero/zes_api.h>
 #include <regex>
-#include <sstream> // For std::ostringstream
+#include <sstream>
 #include <stdexcept>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string>
+#include <sys/stat.h>
+#include <sys/sysmacros.h>
+#include <time.h>
+#include <unistd.h>
 #include <unordered_map>
 #include <variant>
 
@@ -272,3 +275,76 @@ std::string engine_flags_to_str(zes_engine_type_flags_t flags)
     return oss.str();
 }
 
+namespace fs = std::filesystem;
+
+pciid_t get_pci_id_for_render_node(const std::string &render_path)
+{
+    pciid_t result = {0, 0}; // Initialize with zeros
+
+    // Get the minor number from the device file
+    struct stat sb;
+    if (stat(render_path.c_str(), &sb) == -1)
+    {
+        std::cerr << "Error: Cannot stat " << render_path << std::endl;
+        return result;
+    }
+
+    int minor_number = minor(sb.st_rdev);
+
+    // Look through the /sys/class/drm directory for the corresponding device
+    for (const auto &entry : fs::directory_iterator("/sys/class/drm"))
+    {
+        std::string drm_name = entry.path().filename();
+
+        // Check if this is a renderD entry with matching minor number
+        std::regex render_regex("renderD([0-9]+)");
+        std::smatch match;
+        if (std::regex_match(drm_name, match, render_regex))
+        {
+            int entry_minor = std::stoi(match[1]);
+            if (entry_minor == minor_number)
+            {
+                // Find the PCI device this DRM device is connected to
+                fs::path device_path = entry.path();
+
+                // Resolve the symbolic link to the actual device in /sys/devices/pci...
+                fs::path real_path = fs::canonical(device_path);
+
+                // Walk up the directory tree to find the PCI device
+                fs::path current = real_path;
+                bool found_pci = false;
+
+                while (current != "/" && !found_pci)
+                {
+                    fs::path vendor_path = current / "vendor";
+                    fs::path device_path = current / "device";
+
+                    if (fs::exists(vendor_path) && fs::exists(device_path))
+                    {
+                        // Read vendor and device IDs
+                        std::ifstream vendor_file(vendor_path);
+                        std::ifstream device_file(device_path);
+
+                        std::string vendor_id_str, device_id_str;
+                        std::getline(vendor_file, vendor_id_str);
+                        std::getline(device_file, device_id_str);
+
+                        // Convert hex strings to uint32_t values
+                        std::istringstream vendor_stream(vendor_id_str);
+                        std::istringstream device_stream(device_id_str);
+
+                        vendor_stream >> std::hex >> result.vendor;
+                        device_stream >> std::hex >> result.device;
+
+                        return result;
+                    }
+
+                    // Move up to parent directory
+                    current = current.parent_path();
+                }
+            }
+        }
+    }
+
+    return result; // Return zeros if not found
+}

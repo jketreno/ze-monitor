@@ -101,7 +101,7 @@ Device 2: 8086:A780 (Intel(R) UHD Graphics 770)
 ## Show details for a given device
 
 ```
-sudo ze-monitor --info --device ( PCIID | # | BDF | UUID )
+sudo ze-monitor --info --device ( PCIID | # | BDF | UUID | /dev/dri/render*)
 ```
 
 Example output:
@@ -142,7 +142,7 @@ NOTE: If you run it without 'sudo', no engines will be reported.
 WIP
 
 ```
-sudo ze-monitor --device ( PCIID | # | BDF | UUID ) \
+sudo ze-monitor --device ( PCIID | # | BDF | UUID | /dev/dri/render* ) \
   --interval ms --output ( txt | json | ncurses)
 ```
 

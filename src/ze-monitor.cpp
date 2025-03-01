@@ -212,6 +212,8 @@ int32_t find_device_index(arg_search_t search, std::vector<std::unique_ptr<Devic
 {
     pciid_t pciid;
     zes_uuid_t uuid;
+    bdf_t bdf;
+
     for (uint32_t i = 0; i < devices.size(); ++i)
     {
         const Device *device = devices[i].get();
@@ -225,6 +227,13 @@ int32_t find_device_index(arg_search_t search, std::vector<std::unique_ptr<Devic
             pciid = std::get<pciid_t>(search.data);
             match = (pciid.vendor == device->getDeviceProperties()->core.vendorId &&
                      pciid.device == device->getDeviceProperties()->core.deviceId);
+            break;
+        case BDF:
+            bdf = std::get<bdf_t>(search.data);
+            match = (bdf.domain == device->getDevicePciProperties()->address.domain &&
+                     bdf.bus == device->getDevicePciProperties()->address.bus &&
+                     bdf.device == device->getDevicePciProperties()->address.device &&
+                     bdf.function == device->getDevicePciProperties()->address.function);
             break;
         case UUID:
             uuid = std::get<zes_uuid_t>(search.data);
@@ -382,7 +391,6 @@ void show_temperatures(const Device *device)
 
 int main(int argc, char *argv[])
 {
-    bool listDevices = true;
     bool showInfo = false;
     arg_search_t argSearch;
 
@@ -401,7 +409,6 @@ int main(int argc, char *argv[])
                 std::cerr << "Invalid argument: " << arg << std::endl;
                 return -1;
             }
-            listDevices = false;
             i++; // Skip the device argument
         }
         else if (arg == "--info")
@@ -423,26 +430,57 @@ int main(int argc, char *argv[])
 
     std::vector<std::unique_ptr<Device>> devices = get_devices();
 
-    if (listDevices)
+    const Device *device = nullptr;
+    int32_t index = -1;
+    if (argSearch.type != INVALID)
     {
-        list_devices(devices);
-        exit(0);
+        index = find_device_index(argSearch, devices);
+        if (index != -1)
+        {
+            device = devices[index].get();
+        }
+        else
+        {
+            printf("BDF --device %s not found.\n", argSearch.match.c_str());
+            list_devices(devices);
+            exit(-1);
+        }
     }
 
-    int32_t index = find_device_index(argSearch, devices);
-    if (index == -1)
+    if (device == nullptr)
     {
-        std::cerr << "Unable to find device" << std::endl;
-        return -1;
+        if (!showInfo)
+        {
+            list_devices(devices);
+            exit(0);
+        }
     }
-
-    const Device *device = devices[index].get();
 
     if (showInfo)
     {
-        show_device_properties(device);
-        show_engine_groups(device);
-        show_temperatures(device);
+        if (device != nullptr)
+        {
+            show_device_properties(device);
+            show_engine_groups(device);
+            show_temperatures(device);
+        }
+        else
+        {
+            for (uint32_t i = 0; i < devices.size(); ++i)
+            {
+                device = devices[i].get();
+
+                printf("Device %d: %04X:%04X (%s)\n",
+                       i + 1,
+                       device->getDeviceProperties()->core.vendorId,
+                       device->getDeviceProperties()->core.deviceId,
+                       device->getDeviceProperties()->modelName);
+
+                show_device_properties(device);
+                show_engine_groups(device);
+                show_temperatures(device);
+            }
+        }
         return 0;
     }
 
