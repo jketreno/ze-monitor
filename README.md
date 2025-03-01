@@ -107,7 +107,7 @@ sudo ze-monitor --info --device ( PCIID | # | BDF | UUID )
 Example output:
 
 ```bash
-$ ze-monitor --device 2 --info
+$ sudo ze-monitor --device 2 --info
 Device: 8086:A780 (Intel(R) UHD Graphics 770)
  UUID: 868080A7-0400-0000-0002-000000000000
  BDF: 0000:0000:0002:0000
