@@ -1,5 +1,5 @@
-#include "device.hpp"
-#include "helpers.hpp"
+#include "device.h"
+#include "helpers.h"
 #include <iostream>             // for cerr, cout
 
 bool Device::initializeDevice() {

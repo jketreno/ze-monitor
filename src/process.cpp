@@ -1,5 +1,5 @@
-#include "process.hpp"
-#include "helpers.hpp"
+#include "process.h"
+#include "helpers.h"
 
 bool ProcessMonitor::initializeProcesses()
 {

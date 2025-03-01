@@ -18,11 +18,11 @@ fi
 
 build
 
-# Use inotifywait to monitor the directory for changes in *.cpp, *.hpp, and Makefile
+# Use inotifywait to monitor the directory for changes in *.cpp, *.h, and Makefile
 inotifywait -m -r -e modify,create,delete --exclude '.*~$' --format '%w%f' \
   "$WATCH_DIR" | while read file; do
-    # If a Makefile, .cpp or .hpp file changes, run make
-    if [[ "$file" =~ \.(cpp|hpp|Makefile)$ ]]; then
+    # If a Makefile, .cpp or .h file changes, run make
+    if [[ "$file" =~ \.(cpp|h|Makefile)$ ]]; then
         echo "Detected change in $file, running 'make'..."
         build
     fi

@@ -9,12 +9,12 @@ and
     https://github.com/intel/compute-runtime/tree/master/programmers-guide
 
 */
-#include "args.hpp"             // for arg_search_t, arg_enum, process_devi...
-#include "device.hpp"           // for ze_error_to_str, engine_type_to_str
-#include "engine.hpp"           // for ze_error_to_str, engine_type_to_str
-#include "helpers.hpp"          // for ze_error_to_str, engine_type_to_str
-#include "process.hpp"          // for ze_error_to_str, engine_type_to_str
-#include "temperature.hpp"      // for ze_error_to_str, engine_type_to_str
+#include "args.h"             // for arg_search_t, arg_enum, process_devi...
+#include "device.h"           // for ze_error_to_str, engine_type_to_str
+#include "engine.h"           // for ze_error_to_str, engine_type_to_str
+#include "helpers.h"          // for ze_error_to_str, engine_type_to_str
+#include "process.h"          // for ze_error_to_str, engine_type_to_str
+#include "temperature.h"      // for ze_error_to_str, engine_type_to_str
 #include <algorithm>            // for min
 #include <exception>            // for exception
 #include <fstream>              // for basic_ostream, operator<<, endl, bas...

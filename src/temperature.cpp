@@ -1,4 +1,4 @@
-#include "temperature.hpp"
+#include "temperature.h"
 #include <ncurses.h>            // for move, wprintw, stdscr, noecho, cbreak
 
 bool TemperatureMonitor::initializeSensors()

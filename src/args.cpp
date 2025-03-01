@@ -1,4 +1,4 @@
-#include "args.hpp"
+#include "args.h"
 
 arg_search_t process_device_argument(const std::string &device_arg)
 {

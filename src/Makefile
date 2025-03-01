@@ -3,7 +3,6 @@ CFLAGS := -O3 -g -std=gnu++20 -Werror -Wall -Wextra -Wpedantic -Wcast-align=stri
 #CFLAGS_DEBUG := -O3 -g --coverage -std=gnu++20 -Werror -Wall -Wextra -Wpedantic -Wcast-align=strict -Wformat-security
 LDFLAGS := -lncurses -lze_loader
 SOURCES := ze-monitor.cpp helpers.cpp args.cpp engine.cpp process.cpp temperature.cpp device.cpp
-HEADERS := $(SOURCES:.cpp=.hpp)
 OBJECTS := $(SOURCES:.cpp=.o)
 TARGET := ze-monitor
 DESTDIR := /usr/bin
@@ -26,7 +25,7 @@ check-pkg:
 		exit 1; \
 	fi
 
-$(BUILD_DIR)/%.o: %.cpp %.hpp
+$(BUILD_DIR)/%.o: %.cpp %.h
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CFLAGS) -c -o $@ $<
 

@@ -1,5 +1,4 @@
-#ifndef __process_hpp__
-#define __process_hpp__
+#pragma once
 
 #include <level_zero/ze_api.h>  // for _ze_result_t, ze_result_t, ZE_MAX_DE...
 #include <level_zero/zes_api.h> // for zes_device_handle_t, _zes_structure_...
@@ -65,4 +64,3 @@ private:
     }
 };
 
-#endif

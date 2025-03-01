@@ -1,5 +1,5 @@
-#ifndef __helpers_cpp__
-#define __helpers_cpp__
+#pragma once
+
 #include <fmt/core.h>
 #include <level_zero/zes_api.h>
 #include <ncurses.h>
@@ -42,4 +42,3 @@ zes_uuid_t uuid_from_string(const std::string &str);
 const char *ze_error_to_str(ze_result_t ret);
 const char *engine_type_to_str(zes_engine_group_t type);
 std::string engine_flags_to_str(zes_engine_type_flags_t flags);
-#endif

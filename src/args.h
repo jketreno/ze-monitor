@@ -1,7 +1,6 @@
-#ifndef __args_hpp__
-#define __args_hpp__
+#pragma once
 
-#include "helpers.hpp"
+#include "helpers.h"
 
 typedef enum arg_enum
 {
@@ -26,4 +25,3 @@ public:
 
 arg_search_t process_device_argument(const std::string &device_arg);
 
-#endif
