@@ -23,6 +23,7 @@ public:
 
     void updateTemperatures();
     void displayTemperatures(uint32_t index);
+    double getTemperature(uint32_t index) const { return temperatures[index]; };
     uint32_t getSensorCount() const { return sensors.size(); }
 
 private:

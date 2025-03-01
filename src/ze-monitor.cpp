@@ -125,7 +125,13 @@ void show_engine_groups(const Device *device)
 
     for (uint32_t i = 0; i < enginesCount; ++i)
     {
-        show_engine_group_properties(device->getEngine(i));
+        const Engine *engine = device->getEngine(i);
+        printf("  Engine %d: %s", i + 1, engine_type_to_str(engine->getEngineProperties()->type));
+        if (engine->getEngineProperties()->onSubdevice)
+        {
+            printf(" (Sub-device ID: %04X)", engine->getEngineProperties()->subdeviceId);
+        }
+        printf("\n");
     }
 }
 
@@ -302,6 +308,7 @@ public:
                 uint32_t row = headings;
 
                 ProcessMonitor processMonitor(device->getHandle());
+
                 tempMonitor.updateTemperatures();
 
                 wprintw(stdscr, "Processes: %d", processMonitor.getProcessCount());
@@ -360,6 +367,18 @@ public:
         }
     }
 };
+
+void show_temperatures(const Device *device)
+{
+    TemperatureMonitor tempMonitor(device->getHandle());
+    printf(" Temperature Sensors: %d\n", tempMonitor.getSensorCount());
+    tempMonitor.updateTemperatures();
+
+    for (uint32_t i = 0; i < tempMonitor.getSensorCount(); ++i)
+    {
+        printf("  Sensor %d: %.1fC\n", i + 1, tempMonitor.getTemperature(i));
+    }
+}
 
 int main(int argc, char *argv[])
 {
@@ -423,6 +442,7 @@ int main(int argc, char *argv[])
     {
         show_device_properties(device);
         show_engine_groups(device);
+        show_temperatures(device);
         return 0;
     }
 
