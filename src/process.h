@@ -9,39 +9,16 @@
 #include <sstream>              // for basic_ostringstream
 #include <vector>               // for vector
 
-class ProcessMonitor
-{
-public:
-    explicit ProcessMonitor(zes_device_handle_t device) : device(device)
-    {
-        processes.resize(_MAX_PROCESS);
-
-        if (!initializeProcesses())
-        {
-            std::cerr << "Failed to initialize process monitoring." << std::endl;
-        }
-    }
-
-    void displayProcesses(uint32_t index) const;
-    uint32_t getProcessCount() const { return actualSize; }
-
-private:
-    zes_device_handle_t device;
-    std::vector<zes_process_state_t> processes;
-    static const uint32_t _MAX_PROCESS = 2048;
-    uint32_t actualSize;
-    bool initializeProcesses();
-};
-
 class ProcessInfo
 {
 public:
-    explicit ProcessInfo(pid_t pid) : pid_(pid) {}
+    explicit ProcessInfo(zes_process_state_t state) : state(state) {}
 
-    std::string getProcessName() const { return readFile("/proc/" + std::to_string(pid_) + "/comm"); }
+    const zes_process_state_t *getProcessState() const { return &state; }
+    std::string getProcessName() const { return readFile("/proc/" + std::to_string(state.processId) + "/comm"); }
     std::string getCommandLine() const
     {
-        std::string cmdline = readFile("/proc/" + std::to_string(pid_) + "/cmdline");
+        std::string cmdline = readFile("/proc/" + std::to_string(state.processId) + "/cmdline");
         for (char &c : cmdline)
         {
             if (c == '\0')
@@ -51,7 +28,7 @@ public:
     }
 
 private:
-    pid_t pid_;
+    zes_process_state_t state;
 
     static std::string readFile(const std::string &path)
     {
@@ -64,3 +41,19 @@ private:
     }
 };
 
+class ProcessMonitor
+{
+public:
+    explicit ProcessMonitor(zes_device_handle_t handle) : device(handle)
+    {
+    }
+
+    ze_result_t updateProcessStats();
+    uint32_t getProcessCount() const { return processInfo.size(); }
+    const ProcessInfo *getProcessInfo(uint32_t index) const { return processInfo[index].get(); }
+
+private:
+    zes_device_handle_t device;
+    std::vector<std::unique_ptr<ProcessInfo>> processInfo;
+    static const uint32_t _MAX_PROCESS = 2048;
+};

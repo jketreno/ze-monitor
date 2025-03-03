@@ -320,6 +320,25 @@ int32_t find_device_index(arg_search_t search, std::vector<std::unique_ptr<Devic
     return -1;
 }
 
+uint32_t show_process_info(uint32_t row, uint32_t width, const ProcessInfo *processInfo)
+{
+    const zes_process_state_t *state = processInfo->getProcessState();
+    const uint32_t pid_size = 6;
+    wprintw(stdscr, "%*d %-*s",
+            pid_size,
+            state->processId,
+            width - pid_size,
+            fit_label(processInfo->getCommandLine(), width - pid_size, justify_middle).c_str());
+    move(++row, 0);
+    wprintw(stdscr, "%-*s MEM: %-12lu SHR: %-12lu FLAGS: %s",
+            pid_size,
+            "",
+            state->memSize, state->sharedSize,
+            engine_flags_to_str(state->engines).c_str());
+    move(++row, 0);
+    return row;
+}
+
 class XeNcurses
 {
 public:
@@ -344,7 +363,7 @@ public:
         endwin();
     }
 
-    void run(uint32_t interval, const Device *device)
+    void run(uint32_t interval, Device *device)
     {
         std::ostringstream output;
 
@@ -368,24 +387,12 @@ public:
                         device->getDeviceProperties()->core.deviceId,
                         device->getDeviceProperties()->modelName);
                 move(++headings, 0);
-                wprintw(stdscr, "Engines: %d", device->getEngineCount());
-                move(++headings, 0);
-                wprintw(stdscr, "Temperature Sensors: %d", tempMonitor.getSensorCount());
-                move(++headings, 0);
-                wprintw(stdscr, "Power Domains: %d", device->getPowerDomainCount());
-                move(++headings, 0);
 
                 uint32_t row = headings;
 
                 ProcessMonitor processMonitor(device->getHandle());
 
                 tempMonitor.updateTemperatures();
-
-                wprintw(stdscr, "Processes: %d", processMonitor.getProcessCount());
-                move(++row, 0);
-
-                wprintw(stdscr, "PSUs: %d", device->getPSUCount());
-                move(++row, 0);
 
                 for (uint32_t i = 0; i < device->getEngineCount(); ++i)
                 {
@@ -407,7 +414,7 @@ public:
 
                 for (uint32_t i = 0; i < device->getPowerDomainCount(); ++i)
                 {
-                    const PowerDomain *powerDomain = device->getPowerDomain(i);
+                    PowerDomain *powerDomain = device->getPowerDomain(i);
                     double energy = powerDomain->getPowerDomainEnergy();
                     wprintw(stdscr, "Power Domain %d: %.02fW", i, energy);
                     move(++row, 0);
@@ -421,10 +428,33 @@ public:
                     move(++row, 0);
                 }
 
-                for (uint32_t i = 0; i < processMonitor.getProcessCount(); ++i)
+                ze_result_t ret = device->updateProcesses();
+                if (ret == ZE_RESULT_SUCCESS && device->getProcessCount() > 0)
                 {
-                    processMonitor.displayProcesses(i);
+                    uint32_t pid_size = 6;
+                    //
+                    // Header begins
+                    for (uint32_t i = 0; i < width; i++)
+                    {
+                        waddch(stdscr, '-');
+                    }
                     move(++row, 0);
+                    wprintw(stdscr, "%*s COMMAND-LINE", pid_size, "PID");
+                    move(++row, 0);
+                    wprintw(stdscr, "%-*s %-17s %-17s %s",
+                            pid_size, "", "USED MEMORY", "SHARED MEMORY", "ENGINE FLAGS");
+                    move(++row, 0);
+                    for (uint32_t i = 0; i < width; i++)
+                    {
+                        waddch(stdscr, '-');
+                    }
+                    move(++row, 0);
+                    // Header ends
+                    //
+                    for (uint32_t i = 0; i < device->getProcessCount(); ++i)
+                    {
+                        row = show_process_info(row, width, device->getProcessInfo(i));
+                    }
                 }
 
                 while (row < height)
@@ -510,7 +540,7 @@ int main(int argc, char *argv[])
 
     std::vector<std::unique_ptr<Device>> devices = get_devices();
 
-    const Device *device = nullptr;
+    Device *device = nullptr;
     int32_t index = -1;
     if (argSearch.type != INVALID)
     {

@@ -29,6 +29,10 @@ std::string fit_label(const std::string &label, uint32_t max_width, justify_dir_
         {
         case justify_left:
             return label.substr(0, max_width - 3) + "...";
+        case justify_middle:
+            return label.substr(0, max_width / 2 - 2) +
+                   "..." +
+                   label.substr(label.length() - (max_width / 2) + 1, label.length());
         case justify_right:
             return "..." + label.substr(label.length() - (max_width - 3), max_width - 3);
         }

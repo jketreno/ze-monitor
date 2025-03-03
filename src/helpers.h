@@ -23,6 +23,7 @@
 typedef enum
 {
     justify_left,
+    justify_middle,
     justify_right
 } justify_dir_t;
 

@@ -2,6 +2,7 @@
 
 #include "engine.h"
 #include "power_domain.h"
+#include "process.h"
 #include "psu.h"
 
 #include <level_zero/ze_api.h>  // for _ze_result_t, ze_result_t, ZE_MAX_DE...
@@ -12,7 +13,7 @@
 
 class Device {
 public:
-    Device(zes_device_handle_t handle) : device(handle)
+    Device(zes_device_handle_t handle) : device(handle), processMonitor(handle)
     {
         std::memset(&deviceExtProperties, 0, sizeof(deviceExtProperties));
         deviceExtProperties.stype = ZES_STRUCTURE_TYPE_DEVICE_EXT_PROPERTIES;
@@ -35,9 +36,13 @@ public:
     uint32_t getEngineCount() const { return engines.size(); }
     Engine *getEngine(uint32_t index) const { return engines[index].get(); }
     uint32_t getPowerDomainCount() const { return powerDomains.size(); }
-    const PowerDomain *getPowerDomain(uint32_t index) const { return powerDomains[index].get(); }
+    PowerDomain *getPowerDomain(uint32_t index) const { return powerDomains[index].get(); }
     uint32_t getPSUCount() const { return psus.size(); }
     const PSU *getPSU(uint32_t index) const { return psus[index].get(); }
+
+    ze_result_t updateProcesses() { return processMonitor.updateProcessStats(); }
+    uint32_t getProcessCount() const { return processMonitor.getProcessCount(); }
+    const ProcessInfo *getProcessInfo(uint32_t index) const { return processMonitor.getProcessInfo(index); }
 
 private:
     zes_device_handle_t device;
@@ -48,6 +53,8 @@ private:
     std::vector<std::unique_ptr<Engine>> engines;
     std::vector<std::unique_ptr<PowerDomain>> powerDomains;
     std::vector<std::unique_ptr<PSU>> psus;
+
+    ProcessMonitor processMonitor;
 
     bool initializeDevice();
 };

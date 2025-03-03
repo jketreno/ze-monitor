@@ -1,52 +1,36 @@
 #include "process.h"
 #include "helpers.h"
 
-bool ProcessMonitor::initializeProcesses()
+ze_result_t ProcessMonitor::updateProcessStats()
 {
-    actualSize = _MAX_PROCESS;
+    zes_process_state_t processes[_MAX_PROCESS];
+    uint32_t count = _MAX_PROCESS;
 
-    ze_result_t ret = zesDeviceProcessesGetState(device, &actualSize, processes.data());
+    ze_result_t ret = zesDeviceProcessesGetState(device, &count, processes);
     if (ret != ZE_RESULT_SUCCESS && ret != ZE_RESULT_ERROR_INVALID_SIZE)
     {
-        actualSize = 0;
         std::cerr << "Unable to get process information (ret " << std::hex << ret << "): " << ze_error_to_str(ret) << std::endl;
-        return true;
+        return ZE_RESULT_ERROR_UNSUPPORTED_FEATURE;
     }
 
     if (ret == ZE_RESULT_ERROR_INVALID_SIZE)
     {
-        actualSize = std::min(actualSize, _MAX_PROCESS);
-        ret = zesDeviceProcessesGetState(device, &actualSize, processes.data());
+        count = std::min(count, _MAX_PROCESS);
+        ret = zesDeviceProcessesGetState(device, &count, processes);
         if (ret != ZE_RESULT_SUCCESS)
         {
             std::cerr << "Retry failed to get process info (ret " << std::hex << ret << "): " << ze_error_to_str(ret) << std::endl;
-            return false;
+            return ZE_RESULT_ERROR_UNSUPPORTED_FEATURE;
         }
     }
 
-    return true;
-}
-
-void ProcessMonitor::displayProcesses(uint32_t index) const
-{
-    if (index >= actualSize)
-        return;
-    const auto &process = processes[index];
-    try
+    // TODO: Walk looking for matching pids in new array and only update the
+    // zes_process_state_t fields; don't re-look up the process info
+    processInfo.clear();
+    for (size_t i = 0; i < count; ++i)
     {
-        ProcessInfo info(process.processId);
-        std::ostringstream output;
-        output << process.processId << " "
-               << info.getCommandLine() << " "
-               << "MEM: " << process.memSize << " "
-               << "SHR: " << process.sharedSize << " "
-               << "FLAGS: " << engine_flags_to_str(process.engines)
-               << std::endl;
-        wprintw(stdscr, "%s", output.str().c_str());
+        processInfo.emplace_back(std::make_unique<ProcessInfo>(processes[i]));
     }
-    catch (const std::exception &e)
-    {
-        std::cerr << "Error retrieving process info: " << e.what() << std::endl;
-    }
-}
 
+    return ZE_RESULT_SUCCESS;
+}
