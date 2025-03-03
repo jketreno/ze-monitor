@@ -65,6 +65,34 @@ version=$(cat version.txt)
 build/${version}/ze-monitor
 ```
 
+### Build and install .deb
+
+In order to build the .deb package, you need the following
+packages installed:
+
+```bash
+sudo apt-get install -y \
+    debhelper \
+    devscripts
+```
+
+You can then build the .deb:
+
+```bash
+if [ -d src ]; then
+  cd src
+fi
+version=$(cat version.txt)
+make deb
+sudo dpkg -i build/${version}/packages/ze-monitor_0.1.0-1_amd64.deb
+```
+
+You can then run ze-monitor from your path:
+
+```bash
+ze-monitor
+```
+
 # Developing
 
 To run the built binary without building a full .deb package, you can
