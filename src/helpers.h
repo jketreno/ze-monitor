@@ -49,5 +49,6 @@ std::string pciid_to_string(const pciid_t *pciid);
 zes_uuid_t uuid_from_string(const std::string &str);
 const char *ze_error_to_str(ze_result_t ret);
 const char *engine_type_to_str(zes_engine_group_t type);
+const char *voltage_status_to_str(zes_psu_voltage_status_t type);
 std::string engine_flags_to_str(zes_engine_type_flags_t flags);
 pciid_t get_pci_id_for_render_node(const std::string &render_path);

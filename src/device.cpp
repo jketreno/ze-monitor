@@ -72,5 +72,38 @@ bool Device::initializeDevice()
         }
     }
 
+    count = 0;
+    result = zesDeviceEnumPsus(device, &count, nullptr);
+    if (result != ZE_RESULT_SUCCESS)
+    {
+        // Not all hardware supports PSUs
+        if (result == ZE_RESULT_ERROR_UNSUPPORTED_FEATURE)
+        {
+            count = 0;
+        }
+        else
+        {
+            std::cerr << "Failed to enumerate power supply units: " << std::hex << result << " (" << ze_error_to_str(result) << ")" << std::endl;
+            return false;
+        }
+    }
+
+    if (count > 0)
+    {
+        std::unique_ptr<zes_psu_handle_t[]> psuHandles = std::make_unique<zes_psu_handle_t[]>(count);
+
+        result = zesDeviceEnumPsus(device, &count, psuHandles.get());
+        if (result != ZE_RESULT_SUCCESS)
+        {
+            std::cerr << "Failed to enumerate power supply units: " << std::hex << result << " (" << ze_error_to_str(result) << ")" << std::endl;
+            return false;
+        }
+
+        for (size_t i = 0; i < count; ++i)
+        {
+            psus.emplace_back(std::make_unique<PSU>(psuHandles[i]));
+        }
+    }
+
     return true;
 }

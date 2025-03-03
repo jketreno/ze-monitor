@@ -153,14 +153,45 @@ void show_power_domains(const Device *device)
         const zes_power_properties_t *properties = powerDomain->getPowerDomainProperties();
         if (properties->onSubdevice)
         {
-            printf("  Power Domain %d: Can Control: %s, Threshold supported: %s\n",
-                   i + 1, properties->canControl ? "Yes" : "No", properties->isEnergyThresholdSupported ? "Yes" : "No");
+            printf("  Power Domain %d: Sub Device: %04X, Can Control: %s, Threshold supported: %s\n",
+                   i + 1,
+                   properties->subdeviceId,
+                   properties->canControl ? "Yes" : "No", properties->isEnergyThresholdSupported ? "Yes" : "No");
         }
         else
         {
-            printf("  Power Domain %d: Sub Device: %04X, Can Control: %s, Threshold supported: %s\n",
-                   properties->subdeviceId,
+            printf("  Power Domain %d: Can Control: %s, Threshold supported: %s\n",
                    i + 1, properties->canControl ? "Yes" : "No", properties->isEnergyThresholdSupported ? "Yes" : "No");
+        }
+    }
+}
+
+void show_psus(const Device *device)
+{
+    uint32_t psuCount = device->getPSUCount();
+    std::ostringstream output;
+
+    printf(" Power Supply Units: %d\n", psuCount);
+    if (psuCount == 0)
+    {
+        return;
+    }
+
+    for (uint32_t i = 0; i < psuCount; ++i)
+    {
+        const PSU *psu = device->getPSU(i);
+        const zes_psu_properties_t *properties = psu->getPSUProperties();
+        if (properties->onSubdevice)
+        {
+            printf("  Power Supply Unit %d: Sub Device: %04X, Fan: %s, Amp Limit: %d\n",
+                   i + 1,
+                   properties->subdeviceId,
+                   properties->haveFan ? "Yes" : "No", properties->ampLimit);
+        }
+        else
+        {
+            printf("  Power Supply Unit %d: Fan: %s, Amp Limit: %d\n",
+                   i + 1, properties->haveFan ? "Yes" : "No", properties->ampLimit);
         }
         printf("\n");
     }
@@ -353,9 +384,12 @@ public:
                 wprintw(stdscr, "Processes: %d", processMonitor.getProcessCount());
                 move(++row, 0);
 
+                wprintw(stdscr, "PSUs: %d", device->getPSUCount());
+                move(++row, 0);
+
                 for (uint32_t i = 0; i < device->getEngineCount(); ++i)
                 {
-                    const Engine *engine = device->getEngine(i);
+                    Engine *engine = device->getEngine(i);
                     const zes_engine_properties_t *engineProperties = engine->getEngineProperties();
                     if (engineProperties != nullptr)
                     {
@@ -376,6 +410,14 @@ public:
                     const PowerDomain *powerDomain = device->getPowerDomain(i);
                     double energy = powerDomain->getPowerDomainEnergy();
                     wprintw(stdscr, "Power Domain %d: %.02fW", i, energy);
+                    move(++row, 0);
+                }
+
+                for (uint32_t i = 0; i < device->getPSUCount(); ++i)
+                {
+                    const PSU *psu = device->getPSU(i);
+                    const zes_psu_state_t *state = psu->getPSUState();
+                    wprintw(stdscr, "Power Supply Unit %d: %s", i, voltage_status_to_str(state->voltStatus));
                     move(++row, 0);
                 }
 
@@ -502,6 +544,7 @@ int main(int argc, char *argv[])
             show_engine_groups(device);
             show_temperatures(device);
             show_power_domains(device);
+            show_psus(device);
         }
         else
         {
@@ -519,6 +562,7 @@ int main(int argc, char *argv[])
                 show_engine_groups(device);
                 show_temperatures(device);
                 show_power_domains(device);
+                show_psus(device);
             }
         }
         return 0;

@@ -2,6 +2,7 @@
 
 #include "engine.h"
 #include "power_domain.h"
+#include "psu.h"
 
 #include <level_zero/ze_api.h>  // for _ze_result_t, ze_result_t, ZE_MAX_DE...
 #include <level_zero/zes_api.h> // for zes_device_handle_t, _zes_structure_...
@@ -32,9 +33,11 @@ public:
     const zes_device_ext_properties_t *getDeviceExtProperties() const { return &deviceExtProperties; }
     const zes_pci_properties_t *getDevicePciProperties() const { return &pciProperties; }
     uint32_t getEngineCount() const { return engines.size(); }
-    const Engine *getEngine(uint32_t index) const { return engines[index].get(); }
+    Engine *getEngine(uint32_t index) const { return engines[index].get(); }
     uint32_t getPowerDomainCount() const { return powerDomains.size(); }
     const PowerDomain *getPowerDomain(uint32_t index) const { return powerDomains[index].get(); }
+    uint32_t getPSUCount() const { return psus.size(); }
+    const PSU *getPSU(uint32_t index) const { return psus[index].get(); }
 
 private:
     zes_device_handle_t device;
@@ -44,6 +47,7 @@ private:
 
     std::vector<std::unique_ptr<Engine>> engines;
     std::vector<std::unique_ptr<PowerDomain>> powerDomains;
+    std::vector<std::unique_ptr<PSU>> psus;
 
     bool initializeDevice();
 };

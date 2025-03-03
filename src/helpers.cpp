@@ -245,6 +245,27 @@ const char *engine_type_to_str(zes_engine_group_t type)
 #undef type_to_str
 }
 
+const char *voltage_status_to_str(zes_psu_voltage_status_t type)
+{
+// Define a macro to prevent having to type each code twice...
+#define type_to_str(X) \
+    case X:            \
+        return #X;     \
+        break
+
+    switch (type)
+    {
+        type_to_str(ZES_PSU_VOLTAGE_STATUS_UNKNOWN);
+        type_to_str(ZES_PSU_VOLTAGE_STATUS_NORMAL);
+        type_to_str(ZES_PSU_VOLTAGE_STATUS_OVER);
+        type_to_str(ZES_PSU_VOLTAGE_STATUS_UNDER);
+        type_to_str(ZES_PSU_VOLTAGE_STATUS_FORCE_UINT32);
+    default:
+        return "UNKNOWN";
+        break;
+    }
+#undef type_to_str
+}
 
 std::string engine_flags_to_str(zes_engine_type_flags_t flags)
 {

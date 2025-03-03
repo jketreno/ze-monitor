@@ -2,7 +2,7 @@ CXX := g++
 CFLAGS := -O3 -g -std=gnu++20 -Werror -Wall -Wextra -Wpedantic -Wcast-align=strict -Wformat-security
 #CFLAGS_DEBUG := -O3 -g --coverage -std=gnu++20 -Werror -Wall -Wextra -Wpedantic -Wcast-align=strict -Wformat-security
 LDFLAGS := -lncurses -lze_loader
-SOURCES := ze-monitor.cpp helpers.cpp args.cpp engine.cpp process.cpp temperature.cpp device.cpp power_domain.cpp
+SOURCES := ze-monitor.cpp helpers.cpp args.cpp engine.cpp process.cpp temperature.cpp device.cpp power_domain.cpp psu.cpp
 OBJECTS := $(SOURCES:.cpp=.o)
 TARGET := ze-monitor
 DESTDIR := /usr/bin

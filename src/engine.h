@@ -1,8 +1,9 @@
 #pragma once
 
+#include <cstring>              // for unique_ptr, allocator, make_unique
+#include <iostream>             // for cerr, cout
 #include <level_zero/ze_api.h>  // for _ze_result_t, ze_result_t, ZE_MAX_DE...
 #include <level_zero/zes_api.h> // for zes_device_handle_t, _zes_structure_...
-#include <cstring>               // for unique_ptr, allocator, make_unique
 #include <memory>               // for unique_ptr, allocator, make_unique
 #include <stdexcept>            // for runtime_error
 #include <vector>               // for vector
@@ -22,7 +23,16 @@ public:
     }
 
     zes_engine_handle_t getHandle() const { return engine; }
-    double getEngineUtilization() const { return utilization; }
+    double getEngineUtilization()
+    {
+        ze_result_t ret = updateStats();
+        if (ret != ZE_RESULT_SUCCESS)
+        {
+            std::cerr << "Failed to get activity for engine." << std::endl;
+            return 0;
+        }
+        return utilization;
+    }
     const zes_engine_properties_t *getEngineProperties() const { return &properties; }
 
 private:    
