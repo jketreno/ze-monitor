@@ -2,15 +2,8 @@
 #include "helpers.h"
 #include <iostream>             // for cerr, cout
 
-bool Device::initializeDevice() {
-    std::memset(&deviceExtProperties, 0, sizeof(deviceExtProperties));
-    deviceExtProperties.stype = ZES_STRUCTURE_TYPE_DEVICE_EXT_PROPERTIES;
-    std::memset(&deviceProperties, 0, sizeof(deviceProperties));
-    deviceProperties.stype = ZES_STRUCTURE_TYPE_DEVICE_PROPERTIES;
-    deviceProperties.pNext = &deviceExtProperties;
-    std::memset(&pciProperties, 0, sizeof(pciProperties));
-    pciProperties.stype = ZES_STRUCTURE_TYPE_PCI_PROPERTIES;
-
+bool Device::initializeDevice()
+{
     ze_result_t ret;
 
     ret = zesDeviceGetProperties(device, &deviceProperties);
@@ -28,7 +21,9 @@ bool Device::initializeDevice() {
     }
 
     uint32_t count = 0;
-    ze_result_t result = zesDeviceEnumEngineGroups(device, &count, nullptr);
+    ze_result_t result;
+
+    result = zesDeviceEnumEngineGroups(device, &count, nullptr);
     if (result != ZE_RESULT_SUCCESS)
     {
         std::cerr << "Failed to enumerate engine groups: " << result << "\n";
@@ -49,6 +44,31 @@ bool Device::initializeDevice() {
         for (size_t i = 0; i < count; ++i) 
         {
             engines.emplace_back(std::make_unique<Engine>(engineHandles[i]));
+        }
+    }
+
+    count = 0;
+    result = zesDeviceEnumPowerDomains(device, &count, nullptr);
+    if (result != ZE_RESULT_SUCCESS)
+    {
+        std::cerr << "Failed to enumerate power domains: " << result << "\n";
+        return false;
+    }
+
+    if (count > 0)
+    {
+        std::unique_ptr<zes_pwr_handle_t[]> powerHandles = std::make_unique<zes_pwr_handle_t[]>(count);
+
+        result = zesDeviceEnumPowerDomains(device, &count, powerHandles.get());
+        if (result != ZE_RESULT_SUCCESS)
+        {
+            std::cerr << "Failed to retrieve power domains: " << result << "\n";
+            return false;
+        }
+
+        for (size_t i = 0; i < count; ++i)
+        {
+            powerDomains.emplace_back(std::make_unique<PowerDomain>(powerHandles[i]));
         }
     }
 

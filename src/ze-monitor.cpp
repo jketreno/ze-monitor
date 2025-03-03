@@ -9,12 +9,13 @@ and
     https://github.com/intel/compute-runtime/tree/master/programmers-guide
 
 */
-#include "args.h"             // for arg_search_t, arg_enum, process_devi...
-#include "device.h"           // for ze_error_to_str, engine_type_to_str
-#include "engine.h"           // for ze_error_to_str, engine_type_to_str
-#include "helpers.h"          // for ze_error_to_str, engine_type_to_str
-#include "process.h"          // for ze_error_to_str, engine_type_to_str
-#include "temperature.h"      // for ze_error_to_str, engine_type_to_str
+#include "args.h"    // for arg_search_t, arg_enum, process_devi...
+#include "device.h"  // for ze_error_to_str, engine_type_to_str
+#include "engine.h"  // for ze_error_to_str, engine_type_to_str
+#include "helpers.h" // for ze_error_to_str, engine_type_to_str
+#include "power_domain.h"
+#include "process.h"            // for ze_error_to_str, engine_type_to_str
+#include "temperature.h"        // for ze_error_to_str, engine_type_to_str
 #include <algorithm>            // for min
 #include <exception>            // for exception
 #include <fstream>              // for basic_ostream, operator<<, endl, bas...
@@ -135,6 +136,36 @@ void show_engine_groups(const Device *device)
     }
 }
 
+void show_power_domains(const Device *device)
+{
+    uint32_t powerDomainsCount = device->getPowerDomainCount();
+    std::ostringstream output;
+
+    printf(" Power Domains: %d\n", powerDomainsCount);
+    if (powerDomainsCount == 0)
+    {
+        return;
+    }
+
+    for (uint32_t i = 0; i < powerDomainsCount; ++i)
+    {
+        const PowerDomain *powerDomain = device->getPowerDomain(i);
+        const zes_power_properties_t *properties = powerDomain->getPowerDomainProperties();
+        if (properties->onSubdevice)
+        {
+            printf("  Power Domain %d: Can Control: %s, Threshold supported: %s\n",
+                   i + 1, properties->canControl ? "Yes" : "No", properties->isEnergyThresholdSupported ? "Yes" : "No");
+        }
+        else
+        {
+            printf("  Power Domain %d: Sub Device: %04X, Can Control: %s, Threshold supported: %s\n",
+                   properties->subdeviceId,
+                   i + 1, properties->canControl ? "Yes" : "No", properties->isEnergyThresholdSupported ? "Yes" : "No");
+        }
+        printf("\n");
+    }
+}
+
 ze_result_t list_devices(std::vector<std::unique_ptr<Device>> &devices)
 {
     // Walk through each device and display properties
@@ -147,9 +178,6 @@ ze_result_t list_devices(std::vector<std::unique_ptr<Device>> &devices)
                device->getDeviceProperties()->core.vendorId,
                device->getDeviceProperties()->core.deviceId,
                device->getDeviceProperties()->modelName);
-
-        //        show_device_properties(devices[j].get());
-        //        show_engine_groups(devices[j].get());
     }
 
     return ZE_RESULT_SUCCESS;
@@ -313,6 +341,8 @@ public:
                 move(++headings, 0);
                 wprintw(stdscr, "Temperature Sensors: %d", tempMonitor.getSensorCount());
                 move(++headings, 0);
+                wprintw(stdscr, "Power Domains: %d", device->getPowerDomainCount());
+                move(++headings, 0);
 
                 uint32_t row = headings;
 
@@ -338,6 +368,14 @@ public:
                 for (uint32_t i = 0; i < tempMonitor.getSensorCount(); ++i)
                 {
                     tempMonitor.displayTemperatures(i);
+                    move(++row, 0);
+                }
+
+                for (uint32_t i = 0; i < device->getPowerDomainCount(); ++i)
+                {
+                    const PowerDomain *powerDomain = device->getPowerDomain(i);
+                    double energy = powerDomain->getPowerDomainEnergy();
+                    wprintw(stdscr, "Power Domain %d: %.02fW", i, energy);
                     move(++row, 0);
                 }
 
@@ -463,6 +501,7 @@ int main(int argc, char *argv[])
             show_device_properties(device);
             show_engine_groups(device);
             show_temperatures(device);
+            show_power_domains(device);
         }
         else
         {
@@ -479,6 +518,7 @@ int main(int argc, char *argv[])
                 show_device_properties(device);
                 show_engine_groups(device);
                 show_temperatures(device);
+                show_power_domains(device);
             }
         }
         return 0;

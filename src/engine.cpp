@@ -1,10 +1,8 @@
 #include "engine.h"
 #include <iostream>             // for cerr, cout
 
-bool Engine::initializeEngine() {
-    std::memset(&properties, 0, sizeof(properties));
-    std::memset(&stats, 0, sizeof(stats));
-
+bool Engine::initializeEngine()
+{
     ze_result_t ret;
 
     ret = zesEngineGetProperties(engine, &properties);

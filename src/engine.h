@@ -13,7 +13,8 @@ public:
     {
         std::memset(&properties, 0, sizeof(properties));
         properties.stype = ZES_STRUCTURE_TYPE_ENGINE_PROPERTIES;
-        
+        std::memset(&stats, 0, sizeof(stats));
+
         if (!initializeEngine())
         {
             throw std::runtime_error("Failed to initialize engine.");
