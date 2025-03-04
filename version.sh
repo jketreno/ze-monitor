@@ -1,5 +1,5 @@
 #!/bin/bash
-version=$1
+version="${1}"
 
 echo "Current version: $(cat src/version.txt)"
 echo "Updating to version: ${version}"
@@ -59,14 +59,16 @@ if ask "Do you want to continue"; then
   if ! git commit -a -m "version ${version}"; then
     fail "git commit -a -m 'version ${version}'"
   fi
-  cmd="git tag -a v${version} -m 'Version ${version}'"
-  if ! ${cmd}; then
-    fail "${cmd}"
+  cmd=(git tag -a "v${version}" -m "Version ${version}")
+  echo "Running: ${cmd[*]}"
+  if ! "${cmd[@]}"; then
+    fail "${cmd[@]}"
   fi
   if ask "Do you want to publish release"; then
-    cmd="git push origin v${version}"
-    if ! ${cmd}; then
-      fail "${cmd}"
+    cmd=(git push origin "v${version}")
+    echo "Running: ${cmd[*]}"
+    if ! "${cmd[@]}"; then
+      fail "${cmd[@]}"
     fi
     echo "WIP"
   fi
