@@ -388,7 +388,20 @@ public:
                         device->getDeviceProperties()->modelName);
                 move(++headings, 0);
 
+                zes_mem_state_t memState = device->getMemoryState();
+
                 uint32_t row = headings;
+
+                wprintw(stdscr, "Total Memory: %12lu",
+                        memState.size);
+                move(++row, 0);
+
+                if (memState.size != 0)
+                {
+                    double utilization = 100 * memState.free / memState.size;
+                    draw_utilization_bar(width, utilization, "Free memory: ");
+                    move(++row, 0);
+                }
 
                 ProcessMonitor processMonitor(device->getHandle());
 
@@ -412,11 +425,16 @@ public:
                     move(++row, 0);
                 }
 
+                double total_energy = 0;
                 for (uint32_t i = 0; i < device->getPowerDomainCount(); ++i)
                 {
                     PowerDomain *powerDomain = device->getPowerDomain(i);
                     double energy = powerDomain->getPowerDomainEnergy();
-                    wprintw(stdscr, "Power Domain %d: %.02fW", i, energy);
+                    total_energy += energy;
+                }
+                if (total_energy != 0)
+                {
+                    wprintw(stdscr, "Power usage: %.01fW", total_energy);
                     move(++row, 0);
                 }
 
@@ -503,6 +521,7 @@ int main(int argc, char *argv[])
 {
     bool showInfo = false;
     arg_search_t argSearch;
+    uint32_t interval = 1000;
 
     // Process command-line arguments
     for (int i = 1; i < argc; ++i)
@@ -519,6 +538,11 @@ int main(int argc, char *argv[])
                 std::cerr << "Invalid argument: " << arg << std::endl;
                 return -1;
             }
+            i++; // Skip the device argument
+        }
+        else if (arg == "--interval" && i + 1 < argc)
+        {
+            interval = strtoul(argv[i + 1], nullptr, 10);
             i++; // Skip the device argument
         }
         else if (arg == "--info")
@@ -601,7 +625,7 @@ int main(int argc, char *argv[])
     try
     {
         XeNcurses app;
-        app.run(1000, device);
+        app.run(interval, device);
     }
     catch (const std::exception &e)
     {

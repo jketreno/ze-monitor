@@ -1,6 +1,7 @@
 #include "device.h"
 #include "helpers.h"
 #include <iostream>             // for cerr, cout
+#include <stdexcept>            // for runtime_error
 
 bool Device::initializeDevice()
 {
@@ -105,5 +106,51 @@ bool Device::initializeDevice()
         }
     }
 
+    count = 0;
+    result = zesDeviceEnumMemoryModules(device, &count, nullptr);
+    if (result != ZE_RESULT_SUCCESS)
+    {
+        // Not all hardware supports PSUs
+        if (result == ZE_RESULT_ERROR_UNSUPPORTED_FEATURE)
+        {
+            count = 0;
+        }
+        else
+        {
+            std::cerr << "Failed to enumerate memory modules: " << std::hex << result << " (" << ze_error_to_str(result) << ")" << std::endl;
+            return false;
+        }
+    }
+
+    if (count > 0)
+    {
+        memoryHandles.resize(count);
+
+        result = zesDeviceEnumMemoryModules(device, &count, memoryHandles.data());
+        if (result != ZE_RESULT_SUCCESS)
+        {
+            std::cerr << "Failed to enumerate power memory modules: " << std::hex << result << " (" << ze_error_to_str(result) << ")" << std::endl;
+            return false;
+        }
+    }
+
     return true;
+}
+
+const zes_mem_state_t Device::getMemoryState()
+{
+    zes_mem_state_t ret;
+    ret.free = 0;
+    ret.size = 0;
+
+    for (uint32_t i = 0; i < memoryHandles.size(); ++i)
+    {
+        zes_mem_state_t memState;
+
+        zesMemoryGetState(memoryHandles[i], &memState);
+        ret.free += memState.free;
+        ret.size += memState.size;
+    }
+
+    return ret;
 }

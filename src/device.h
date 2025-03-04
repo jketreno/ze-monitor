@@ -43,13 +43,14 @@ public:
     ze_result_t updateProcesses() { return processMonitor.updateProcessStats(); }
     uint32_t getProcessCount() const { return processMonitor.getProcessCount(); }
     const ProcessInfo *getProcessInfo(uint32_t index) const { return processMonitor.getProcessInfo(index); }
+    const zes_mem_state_t getMemoryState();
 
 private:
     zes_device_handle_t device;
     zes_device_ext_properties_t deviceExtProperties;
     zes_device_properties_t deviceProperties;
     zes_pci_properties_t pciProperties;
-
+    std::vector<zes_mem_handle_t> memoryHandles;
     std::vector<std::unique_ptr<Engine>> engines;
     std::vector<std::unique_ptr<PowerDomain>> powerDomains;
     std::vector<std::unique_ptr<PSU>> psus;
