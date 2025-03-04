@@ -178,7 +178,25 @@ If `--one-shot` is listed, --interval will be used as a one-shot
 to gather statistics.
 
 ```bash
-$ ze-monitor --device 1 --interval 1000 --output txt
+$ sudo ze-monitor --device 2 --interval 500
+Device: 8086:E20B (Intel(R) Graphics [0xe20b])
+Total Memory:  12809404416
+Free memory:  [#  55% ############################                              ]
+Power usage: 165.0W
+------------------------------------------------------------------------------------------
+   PID COMMAND-LINE
+       USED MEMORY       SHARED MEMORY     ENGINE FLAGS
+------------------------------------------------------------------------------------------
+     1 /sbin/init splash
+       MEM: 106102784    SHR: 100663296    FLAGS: RENDER COMPUTE
+  1606 /usr/lib/systemd/systemd-logind
+       MEM: 106102784    SHR: 100663296    FLAGS: RENDER COMPUTE
+  5164 /usr/bin/gnome-shell
+       MEM: 530513920    SHR: 503316480    FLAGS: RENDER COMPUTE
+  5237 /usr/bin/Xwayland :1024 -rootless -nores...isplayfd 6 -initfd 7 -byteswappedclients
+       MEM: 0            SHR: 0            FLAGS:
+ 40480 python chat.py
+       MEM: 5544226816   SHR: 0            FLAGS: DMA COMPUTE
 ```
 
 
