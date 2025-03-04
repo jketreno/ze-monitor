@@ -4,6 +4,7 @@
 #include "power_domain.h"
 #include "process.h"
 #include "psu.h"
+#include "temperature.h"
 
 #include <level_zero/ze_api.h>  // for _ze_result_t, ze_result_t, ZE_MAX_DE...
 #include <level_zero/zes_api.h> // for zes_device_handle_t, _zes_structure_...
@@ -13,7 +14,7 @@
 
 class Device {
 public:
-    Device(zes_device_handle_t handle) : device(handle), processMonitor(handle)
+    Device(zes_device_handle_t handle) : device(handle), processMonitor(handle), temperatureMonitor(handle)
     {
         std::memset(&deviceExtProperties, 0, sizeof(deviceExtProperties));
         deviceExtProperties.stype = ZES_STRUCTURE_TYPE_DEVICE_EXT_PROPERTIES;
@@ -45,6 +46,10 @@ public:
     const ProcessInfo *getProcessInfo(uint32_t index) const { return processMonitor.getProcessInfo(index); }
     const zes_mem_state_t getMemoryState();
 
+    ze_result_t updateTemperatures() { return temperatureMonitor.updateTemperatures(); }
+    uint32_t getTemperatureCount() { return temperatureMonitor.getSensorCount(); }
+    double getTemperature(uint32_t index) { return temperatureMonitor.getTemperature(index); }
+
 private:
     zes_device_handle_t device;
     zes_device_ext_properties_t deviceExtProperties;
@@ -56,6 +61,7 @@ private:
     std::vector<std::unique_ptr<PSU>> psus;
 
     ProcessMonitor processMonitor;
+    TemperatureMonitor temperatureMonitor;
 
     bool initializeDevice();
 };

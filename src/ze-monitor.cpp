@@ -14,8 +14,9 @@ and
 #include "engine.h"  // for ze_error_to_str, engine_type_to_str
 #include "helpers.h" // for ze_error_to_str, engine_type_to_str
 #include "power_domain.h"
-#include "process.h"            // for ze_error_to_str, engine_type_to_str
-#include "temperature.h"        // for ze_error_to_str, engine_type_to_str
+#include "process.h"     // for ze_error_to_str, engine_type_to_str
+#include "temperature.h" // for ze_error_to_str, engine_type_to_str
+#include "ze-ncurses.h"
 #include <algorithm>            // for min
 #include <exception>            // for exception
 #include <fstream>              // for basic_ostream, operator<<, endl, bas...
@@ -357,13 +358,30 @@ public:
 
     ~XeNcurses()
     {
-        // Cleanup ncurses
-        nocbreak(); // Don't clear the screen
-        noecho();
+        // Save screen content before exiting
+        int rows, cols;
+        getmaxyx(stdscr, rows, cols);
+
+        std::vector<std::string> screen_content(rows);
+        for (int i = 0; i < rows; ++i)
+        {
+            std::vector<char> line(cols + 1, '\0');
+            move(i, 0);
+            innstr(line.data(), cols); // Capture line from ncurses screen
+            screen_content[i] = std::string(line.data());
+        }
+
+        // Restore terminal state
         endwin();
+
+        // Restore screen contents
+        for (const auto &line : screen_content)
+        {
+            std::cout << line << std::endl;
+        }
     }
 
-    void run(uint32_t interval, Device *device)
+    void run(Device *device, uint32_t interval, bool oneShot)
     {
         std::ostringstream output;
 
@@ -378,8 +396,6 @@ public:
 
             try
             {
-                TemperatureMonitor tempMonitor(device->getHandle());
-
                 uint32_t headings = 0;
                 move(0, 0);
                 wprintw(stdscr, "Device: %04X:%04X (%s)",
@@ -403,10 +419,6 @@ public:
                     move(++row, 0);
                 }
 
-                ProcessMonitor processMonitor(device->getHandle());
-
-                tempMonitor.updateTemperatures();
-
                 for (uint32_t i = 0; i < device->getEngineCount(); ++i)
                 {
                     Engine *engine = device->getEngine(i);
@@ -419,9 +431,9 @@ public:
                     }
                 }
 
-                for (uint32_t i = 0; i < tempMonitor.getSensorCount(); ++i)
+                for (uint32_t i = 0; i < device->getTemperatureCount(); ++i)
                 {
-                    tempMonitor.displayTemperatures(i);
+                    wprintw(stdscr, "Sensor %d: %.1fC", i, device->getTemperature(i));
                     move(++row, 0);
                 }
 
@@ -483,6 +495,11 @@ public:
 
                 refresh(); // Refresh the screen to show the message
 
+                if (oneShot)
+                {
+                    return;
+                }
+
                 switch (getch())
                 {
                 case ERR:
@@ -505,21 +522,58 @@ public:
     }
 };
 
-void show_temperatures(const Device *device)
+void show_temperatures(Device *device)
 {
-    TemperatureMonitor tempMonitor(device->getHandle());
-    printf(" Temperature Sensors: %d\n", tempMonitor.getSensorCount());
-    tempMonitor.updateTemperatures();
+    device->updateTemperatures();
 
-    for (uint32_t i = 0; i < tempMonitor.getSensorCount(); ++i)
+    for (uint32_t i = 0; i < device->getTemperatureCount(); ++i)
     {
-        printf("  Sensor %d: %.1fC\n", i + 1, tempMonitor.getTemperature(i));
+        printf("  Sensor %d: %.1fC", i, device->getTemperature(i));
     }
+}
+
+void copyright()
+{
+    printf("ze-monitor: A small Level Zero Sysman GPU monitor utility\n");
+    printf("Copyright (C) 2025 James Ketrenos\n");
+}
+
+#ifndef APP_VERSION
+#define APP_VERSION "unknown"
+#endif
+void version()
+{
+    printf("Version: %s\n", APP_VERSION);
+}
+
+void usage()
+{
+    const uint32_t indent = 2;
+    const uint32_t option_len = 12;
+    const char *options[][2] = {
+        {"device ID", "Device ID to query. Can accept #, BDF, PCI-ID, /dev/dri/*."},
+        {"help", "This text."},
+        {"info", "Show additional details about device."},
+        {"interval ms", "Time interval for polling. Default 1000."},
+        {"one-shot", "Gather statistics, output, then exit."},
+        {"version", "Version info."},
+        {nullptr, nullptr}};
+    printf("\n");
+    printf("usage: ze-monitor [OPTIONS]\n");
+    printf("\n");
+
+    for (uint32_t i = 0; options[i][0] != nullptr; ++i)
+    {
+        printf("%*s --%-*s %s\n", indent, "", option_len, options[i][0], options[i][1]);
+    }
+    printf("\n");
 }
 
 int main(int argc, char *argv[])
 {
     bool showInfo = false;
+    bool listDevices = true;
+    bool oneShot = false;
     arg_search_t argSearch;
     uint32_t interval = 1000;
 
@@ -539,6 +593,7 @@ int main(int argc, char *argv[])
                 return -1;
             }
             i++; // Skip the device argument
+            listDevices = false;
         }
         else if (arg == "--interval" && i + 1 < argc)
         {
@@ -548,6 +603,26 @@ int main(int argc, char *argv[])
         else if (arg == "--info")
         {
             showInfo = true;
+        }
+        else if (arg == "--one-shot")
+        {
+            oneShot = true;
+        }
+        else if (arg == "--list")
+        {
+            listDevices = true;
+        }
+        else if (arg == "--version")
+        {
+            copyright();
+            version();
+            return 0;
+        }
+        else if (arg == "--help")
+        {
+            copyright();
+            usage();
+            return 0;
         }
         else
         {
@@ -575,21 +650,25 @@ int main(int argc, char *argv[])
         }
         else
         {
-            printf("BDF --device %s not found.\n", argSearch.match.c_str());
+            printf("--device %s not found.\n", argSearch.match.c_str());
             list_devices(devices);
             exit(-1);
         }
     }
 
-    if (device == nullptr)
+    if (device == nullptr && !showInfo)
     {
-        if (!showInfo)
-        {
-            list_devices(devices);
-            exit(0);
-        }
+        listDevices = true;
     }
 
+    if (listDevices)
+    {
+        list_devices(devices);
+        return 0;
+    }
+
+    // If --info was requested, either show the single --device or if no device
+    // was provided, list all devices.
     if (showInfo)
     {
         if (device != nullptr)
@@ -622,10 +701,14 @@ int main(int argc, char *argv[])
         return 0;
     }
 
+    // WIP
+    // Playing around with ncurses a bit more...
+    //    ze_ncurses_main(device, interval, oneShot);
+    //    exit(0);
     try
     {
         XeNcurses app;
-        app.run(interval, device);
+        app.run(device, interval, oneShot);
     }
     catch (const std::exception &e)
     {

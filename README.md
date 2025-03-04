@@ -196,12 +196,5 @@ Power usage: 165.0W
        MEM: 5544226816   SHR: 0            FLAGS: DMA COMPUTE
 ```
 
-### WIP
-
-```
-sudo ze-monitor --device ( PCIID | # | BDF | UUID | /dev/dri/render* ) \
-  --output ( txt | json | ncurses) [--one-shot] [--interval ms]
-```
-
-If `--one-shot` is listed, --interval value (default 1000) will be used as a 
-one-shot to gather statistics.
+If you pass `--one-shot`, statistics will be gathered, displayed, and
+then ze-monitor will exit.

@@ -20,8 +20,7 @@ public:
         }
     }
 
-    void updateTemperatures();
-    void displayTemperatures(uint32_t index);
+    ze_result_t updateTemperatures();
     double getTemperature(uint32_t index) const { return temperatures[index]; };
     uint32_t getSensorCount() const { return sensors.size(); }
 

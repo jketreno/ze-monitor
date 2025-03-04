@@ -1,5 +1,4 @@
 #include "temperature.h"
-#include <ncurses.h>            // for move, wprintw, stdscr, noecho, cbreak
 
 bool TemperatureMonitor::initializeSensors()
 {
@@ -26,23 +25,17 @@ bool TemperatureMonitor::initializeSensors()
     return true;
 }
 
-void TemperatureMonitor::updateTemperatures()
+ze_result_t TemperatureMonitor::updateTemperatures()
 {
+    ze_result_t ret;
     for (size_t i = 0; i < sensors.size(); ++i)
     {
-        if (zesTemperatureGetState(sensors[i], &temperatures[i]) != ZE_RESULT_SUCCESS)
+        ret = zesTemperatureGetState(sensors[i], &temperatures[i]);
+        if (ret != ZE_RESULT_SUCCESS)
         {
             std::cerr << "Failed to get temperature for sensor " << i << "\n";
+            return ret;
         }
     }
+    return ZE_RESULT_SUCCESS;
 }
-
-void TemperatureMonitor::displayTemperatures(uint32_t index)
-{
-    if (index >= temperatures.size())
-        return;
-    std::ostringstream output;
-    output << "Sensor " << index << ": " << temperatures[index] << "C";
-    wprintw(stdscr, "%s", output.str().c_str());
-}
-

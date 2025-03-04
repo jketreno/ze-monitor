@@ -8,11 +8,12 @@
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
-// fill in from impl
-class Device;
-class Engine;
-class TemperatureSensor;
-class Process;
+
+#include "device.h"
+#include "temperature.h"
+#include "process.h"
+#include "engine.h"
+#include "helpers.h"
 
 // Color pairs
 enum ColorPairs {
@@ -30,9 +31,6 @@ enum ColorPairs {
 // Application state
 struct AppState {
     Device* device;
-    std::vector<Engine*> engines;
-    std::vector<TemperatureSensor*> sensors;
-    std::vector<Process*> processes;
     int selected_row = 0;
     int scroll_offset = 0;
     bool running = true;
@@ -78,7 +76,7 @@ void draw_progress_bar(WINDOW* win, int y, int x, int width, float percentage,
     // Display percentage
     std::stringstream ss;
     ss << std::fixed << std::setprecision(1) << percentage << "%";
-    mvwprintw(win, y, x + bar_width + 3, ss.str().c_str());
+    mvwprintw(win, y, x + bar_width + 3, "%s", ss.str().c_str());
 }
 
 // Initialize colors
@@ -99,8 +97,9 @@ void init_colors() {
 void draw_header(WINDOW* win, int width) {
     wattron(win, COLOR_PAIR(COLOR_PAIR_HEADER));
     mvwhline(win, 0, 0, ' ', width);
-    mvwprintw(win, 0, 2, "Device Monitor - Press 'q' to quit, 'h' for help");
+    mvwprintw(win, 0, 2, "ze-monitor - Press 'q' to quit, 'h' for help");
     wattroff(win, COLOR_PAIR(COLOR_PAIR_HEADER));
+    wrefresh(win);
 }
 
 // Draw engine utilization panel
@@ -111,17 +110,18 @@ void draw_engines_panel(WINDOW* win, AppState& state) {
     
     mvwprintw(win, y++, 1, "Engine Utilization:");
     
-    for (size_t i = 0; i < state.engines.size() && y < height - 1; i++) {
-        Engine* engine = state.engines[i];
+    for (size_t i = 0; i < state.device->getEngineCount() && y < height - 1; i++) {
+        float utilization = state.device->getEngine(i)->getEngineUtilization();
         
         // Replace with actual calls to your Engine class
         std::string name = "Engine " + std::to_string(i); // engine->getName();
-        float utilization = 50.0f + (rand() % 50); // engine->getUtilization();
         
         mvwprintw(win, y, 1, "%s:", name.c_str());
         draw_progress_bar(win, y, name.length() + 3, width - name.length() - 5, utilization);
         y++;
     }
+
+    wrefresh(win);
 }
 
 // Draw temperature panel
@@ -131,13 +131,12 @@ void draw_temperature_panel(WINDOW* win, AppState& state) {
     getmaxyx(win, height, width);
     
     mvwprintw(win, y++, 1, "Temperature Sensors:");
-    
-    for (size_t i = 0; i < state.sensors.size() && y < height - 1; i++) {
-        TemperatureSensor* sensor = state.sensors[i];
+    state.device->updateTemperatures();
+    for (size_t i = 0; i < state.device->getTemperatureCount() && y < height - 1; i++) {
+        float temp = state.device->getTemperature(i);
         
-        // Replace with actual calls to your TemperatureSensor class
+        // Replace with actual calls to your TemperatureMonitor class
         std::string name = "Sensor " + std::to_string(i); // sensor->getName();
-        float temp = 50.0f + (rand() % 30); // sensor->getTemperature();
         
         int color_pair = COLOR_PAIR_TEMP_NORMAL;
         if (temp > 85) {
@@ -152,6 +151,8 @@ void draw_temperature_panel(WINDOW* win, AppState& state) {
         wattroff(win, COLOR_PAIR(color_pair));
         y++;
     }
+
+    wrefresh(win);
 }
 
 // Draw processes panel
@@ -169,21 +170,28 @@ void draw_processes_panel(WINDOW* win, AppState& state) {
     mvwprintw(win, 1, 65, "Memory");
     wattroff(win, COLOR_PAIR(COLOR_PAIR_HEADER));
     
+    state.device->updateProcesses();
+
     int visible_rows = height - 3;  // -2 for header and border, -1 for status
-    int max_scroll = std::max(0, static_cast<int>(state.processes.size()) - visible_rows);
+    int max_scroll = std::max(0, static_cast<int>(state.device->getProcessCount()) - visible_rows);
     state.scroll_offset = std::min(state.scroll_offset, max_scroll);
     
+    std::vector<const ProcessInfo *> processList;
+    for (uint32_t i = 0; i < state.device->getProcessCount(); ++i) {
+        processList.emplace_back(state.device->getProcessInfo(i));
+    }
+
     // Sort processes (replace with actual logic based on your Process class)
-    std::sort(state.processes.begin(), state.processes.end(), 
-              [&state](Process* a, Process* b) {
+    std::sort(processList.begin(), processList.end(), 
+              [&state](const ProcessInfo* a, const ProcessInfo* b) {
                   // Replace with actual comparisons based on your Process class
                   int result = 0;
                   switch (state.sort_column) {
                       case 0: // PID
-                          result = 1; // a->getPID() - b->getPID();
+                          result = a->getProcessState()->processId - b->getProcessState()->processId;
                           break;
                       case 1: // Name
-                          result = 1; // a->getName().compare(b->getName());
+                          result = a->getCommandLine().compare(b->getCommandLine());
                           break;
                       case 2: // Engine
                           result = 1; // a->getEngineName().compare(b->getEngineName());
@@ -192,17 +200,17 @@ void draw_processes_panel(WINDOW* win, AppState& state) {
                           result = 1; // a->getUtilization() - b->getUtilization();
                           break;
                       case 4: // Memory
-                          result = 1; // a->getMemory() - b->getMemory();
+                          result = a->getProcessState()->memSize - b->getProcessState()->memSize;
                           break;
                   }
                   return state.sort_ascending ? result < 0 : result > 0;
               });
     
     // Draw processes
-    for (int i = 0; i < visible_rows && i + state.scroll_offset < static_cast<int>(state.processes.size()); i++) {
+    for (int i = 0; i < visible_rows && i + state.scroll_offset < static_cast<int>(processList.size()); i++) {
         int y = i + 2;  // +2 for header
         int idx = i + state.scroll_offset;
-        Process* process = state.processes[idx];
+        const ProcessInfo* process = processList[idx];
         
         // Highlight selected row
         if (idx == state.selected_row) {
@@ -211,11 +219,11 @@ void draw_processes_panel(WINDOW* win, AppState& state) {
         }
         
         // Replace with actual calls to your Process class
-        int pid = 1000 + idx; // process->getPID();
-        std::string name = "Process " + std::to_string(idx); // process->getName();
-        std::string engine = "Engine " + std::to_string(idx % state.engines.size()); // process->getEngineName();
+        int pid = process->getProcessState()->processId;
+        std::string name = process->getCommandLine();
+        std::string engine = "Engines " + engine_flags_to_str(process->getProcessState()->engines);
         float utilization = 20.0f + (rand() % 80); // process->getUtilization();
-        float memory = 100.0f + (idx * 50); // process->getMemory();
+        float memory = process->getProcessState()->memSize;
         
         mvwprintw(win, y, 1, "%d", pid);
         mvwprintw(win, y, 8, "%s", name.c_str());
@@ -234,14 +242,16 @@ void draw_processes_panel(WINDOW* win, AppState& state) {
     
     // Status line
     mvwprintw(win, height - 1, 1, "Processes: %zu | Scroll: %d/%d | Press F1-F5 to sort",
-              state.processes.size(), state.scroll_offset, max_scroll);
+              (size_t)state.device->getProcessCount(), state.scroll_offset, max_scroll);
+
+    wrefresh(win);
 }
 
 // Draw help panel
 void draw_help_panel(WINDOW* win) {
     int y = 1;
     
-    mvwprintw(win, y++, 2, "Device Monitor Help");
+    mvwprintw(win, y++, 2, "ze-monitor Help");
     y++;
     mvwprintw(win, y++, 2, "Navigation:");
     mvwprintw(win, y++, 4, "Up/Down - Select process");
@@ -259,17 +269,18 @@ void draw_help_panel(WINDOW* win) {
     mvwprintw(win, y++, 4, "q - Quit");
     
     mvwprintw(win, y + 2, 2, "Press any key to close help");
+    wrefresh(win);
 }
 
 // Main application entry point
-int main() {
+int ze_ncurses_main(Device *device, uint32_t interval, bool oneShot) {
     // Initialize ncurses
     initscr();
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
     curs_set(0);  // Hide cursor
-    timeout(500); // Set getch timeout for non-blocking input (refresh rate)
+    timeout(interval); // Set getch timeout for non-blocking input (refresh rate)
     
     // Initialize colors
     if (has_colors()) {
@@ -305,22 +316,8 @@ int main() {
     AppState state;
     
     // Replace with actual instances of your classes
-    state.device = nullptr; // new Device();
+    state.device = device; // new Device();
     
-    // Create some dummy engines
-    for (int i = 0; i < 3; i++) {
-        state.engines.push_back(nullptr); // new Engine()
-    }
-    
-    // Create some dummy temperature sensors
-    for (int i = 0; i < 3; i++) {
-        state.sensors.push_back(nullptr); // new TemperatureSensor()
-    }
-    
-    // Create some dummy processes
-    for (int i = 0; i < 20; i++) {
-        state.processes.push_back(nullptr); // new Process()
-    }
     
     bool show_help = false;
     
@@ -352,7 +349,8 @@ int main() {
         // Update panels and refresh
         update_panels();
         doupdate();
-        
+        wrefresh(main_win);
+
         // Handle input
         int ch = getch();
         if (ch != ERR) {  // If a key was pressed
@@ -378,7 +376,7 @@ int main() {
                     }
                     break;
                 case KEY_DOWN:
-                    if (state.selected_row < static_cast<int>(state.processes.size()) - 1) {
+                    if (state.selected_row < static_cast<int>(state.device->getProcessCount()) - 1) {
                         state.selected_row++;
                         // Adjust scroll if needed
                         int visible_rows = process_height - 3;
@@ -393,7 +391,7 @@ int main() {
                 case KEY_NPAGE:  // Page Down
                     {
                         int visible_rows = process_height - 3;
-                        int max_scroll = std::max(0, static_cast<int>(state.processes.size()) - visible_rows);
+                        int max_scroll = std::max(0, static_cast<int>(state.device->getProcessCount()) - visible_rows);
                         state.scroll_offset = std::min(max_scroll, state.scroll_offset + visible_rows);
                     }
                     break;
@@ -413,11 +411,26 @@ int main() {
                     }
                     break;
             }
+        }       
+
+        if (oneShot) {
+            break;
         }
-        
-        // Simulate data updates in a real application, you would update from your classes
-        // For example: state.device->updateStats();
     }
+    
+    // Save screen content before exiting
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+
+    std::vector<std::string> screen_content(rows);
+    for (int i = 0; i < rows; ++i)
+    {
+        std::vector<char> line(cols + 1, '\0');
+        move(i, 0);
+        winnstr(process_win, line.data(), cols); // Capture line from ncurses screen
+        screen_content[i] = std::string(line.data());
+    }
+
     
     // Clean up
     del_panel(help_panel);
@@ -428,12 +441,12 @@ int main() {
     delwin(header_win);
     delwin(main_win);
     endwin();
-    
-    // Delete dummy data (in a real app, you'd delete your actual objects)
-    // delete state.device;
-    // for (auto engine : state.engines) delete engine;
-    // for (auto sensor : state.sensors) delete sensor;
-    // for (auto process : state.processes) delete process;
+
+    // Restore screen contents
+    for (const auto &line : screen_content)
+    {
+        std::cout << line << std::endl;
+    }
     
     return 0;
 }

@@ -1,8 +1,8 @@
 CXX := g++
 CFLAGS := -O3 -g -std=gnu++20 -Werror -Wall -Wextra -Wpedantic -Wcast-align=strict -Wformat-security
 #CFLAGS_DEBUG := -O3 -g --coverage -std=gnu++20 -Werror -Wall -Wextra -Wpedantic -Wcast-align=strict -Wformat-security
-LDFLAGS := -lncurses -lze_loader
-SOURCES := ze-monitor.cpp helpers.cpp args.cpp engine.cpp process.cpp temperature.cpp device.cpp power_domain.cpp psu.cpp
+LDFLAGS := -lncurses -lpanel -lze_loader
+SOURCES := ze-monitor.cpp helpers.cpp args.cpp engine.cpp process.cpp temperature.cpp device.cpp power_domain.cpp psu.cpp ze-ncurses.cpp
 OBJECTS := $(SOURCES:.cpp=.o)
 TARGET := ze-monitor
 DESTDIR := /usr/bin
@@ -11,6 +11,7 @@ DESTDIR := /usr/bin
 VERSION_FILE := version.txt
 VERSION := $(shell cat $(VERSION_FILE))
 BUILD_DIR := build/$(VERSION)
+CFLAGS += ${CFLAGS} "-DAPP_VERSION=\"$(VERSION)\""
 
 # Extract components from version
 VERSION_NUMS := $(shell echo $(VERSION) | cut -d'-' -f1)
