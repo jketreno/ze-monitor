@@ -4,3 +4,4 @@ debhelper-build-stamp
 ze-monitor.substvars
 debhelper-build-stamp
 .debhelper
+files
