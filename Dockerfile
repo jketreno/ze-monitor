@@ -15,6 +15,8 @@ SHELL [ "/bin/bash", "-c" ]
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     build-essential \
+    catch2 \
+    cmake \
     debhelper \
     devscripts \
     gdb \
@@ -46,5 +48,12 @@ RUN apt-get update \
 RUN echo -e '#!/bin/sh\n$@' > /usr/local/bin/sudo && \
     chmod +x /usr/local/bin/sudo
 
-COPY /src/* /opt/ze-monitor/
+WORKDIR /opt/ze-monitor-static/build
+COPY / /opt/ze-monitor-static/
+
+RUN cmake .. \
+    && make \
+    && cpack
+
 WORKDIR /opt/ze-monitor
+

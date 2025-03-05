@@ -7,7 +7,7 @@ services:
     devices:
       - /dev/dri:/dev/dri
     volumes:
-      - ./src:/opt/ze-monitor
+      - ./:/opt/ze-monitor
     environment:
       - ZE_ENABLE_SYSMAN=1
     privileged: true

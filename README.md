@@ -18,10 +18,13 @@ NOTE: You need 'docker compose' installed. See [Install Docker Engine on Ubuntu]
 git clone https://github.com/jketreno/ze-monitor.git
 cd ze-monitor
 docker compose build
-docker compose run --rm ze-monitor make deb
 sudo apt install libze1 libncurses6
 version=$(cat src/version.txt)
-sudo dpkg -i src/build/${version}/packages/ze-monitor_${version}_amd64.deb
+docker compose run --remove-orphans --rm \
+  ze-monitor \
+  cp /opt/ze-monitor-static/build/ze-monitor-${version}_amd64.deb \
+  /opt/ze-monitor/build
+sudo dpkg -i build/ze-monitor-${version}_amd64.deb
 ```
 
 ## Build outside container
@@ -54,15 +57,15 @@ sudo apt-get install -y \
 ### Building
 
 ```
-cd src
+cd build
+cmake ..
 make
 ```
 
 ### Running
 
 ```
-version=$(cat version.txt)
-build/${version}/ze-monitor
+build/ze-monitor
 ```
 
 ### Build and install .deb
@@ -73,18 +76,20 @@ packages installed:
 ```bash
 sudo apt-get install -y \
     debhelper \
-    devscripts
+    devscripts \
+    rpm \
+    rpm2cpio
 ```
 
 You can then build the .deb:
 
 ```bash
-if [ -d src ]; then
-  cd src
+if [ -d build ]; then
+  cd build
 fi
-version=$(cat version.txt)
-make deb
-sudo dpkg -i build/${version}/packages/ze-monitor_0.1.0-1_amd64.deb
+version=$(cat ../src/version.txt)
+cpack
+sudo dpkg -i build/packages/ze-monitor_${version}_amd64.deb
 ```
 
 You can then run ze-monitor from your path:
