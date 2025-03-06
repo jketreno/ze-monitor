@@ -1,12 +1,13 @@
 #include "temperature.h"
+#include "helpers.h"
 
 bool TemperatureMonitor::initializeSensors()
 {
     uint32_t count = 0;
-    ze_result_t result = zesDeviceEnumTemperatureSensors(device, &count, nullptr);
-    if (result != ZE_RESULT_SUCCESS)
+    ze_result_t ret = zesDeviceEnumTemperatureSensors(device, &count, nullptr);
+    if (ret != ZE_RESULT_SUCCESS)
     {
-        std::cerr << "Failed to enumerate temperature sensors: " << result << "\n";
+        std::cerr << "Failed to enumerate temperature sensors: " << std::hex << ret << " (" << ze_error_to_str(ret) << ")" << std::endl;
         return false;
     }
 
@@ -14,10 +15,10 @@ bool TemperatureMonitor::initializeSensors()
     {
         sensors.resize(count);
         temperatures.resize(count);
-        result = zesDeviceEnumTemperatureSensors(device, &count, sensors.data());
-        if (result != ZE_RESULT_SUCCESS)
+        ret = zesDeviceEnumTemperatureSensors(device, &count, sensors.data());
+        if (ret != ZE_RESULT_SUCCESS)
         {
-            std::cerr << "Failed to retrieve temperature sensors: " << result << "\n";
+            std::cerr << "Failed to retrieve temperature sensors: " << std::hex << ret << " (" << ze_error_to_str(ret) << ")" << std::endl;
             sensors.clear();
             return false;
         }
@@ -33,7 +34,7 @@ ze_result_t TemperatureMonitor::updateTemperatures()
         ret = zesTemperatureGetState(sensors[i], &temperatures[i]);
         if (ret != ZE_RESULT_SUCCESS)
         {
-            std::cerr << "Failed to get temperature for sensor " << i << "\n";
+            std::cerr << "Failed to get temperature sensor " << i << ": " << std::hex << ret << " (" << ze_error_to_str(ret) << ")" << std::endl;
             return ret;
         }
     }

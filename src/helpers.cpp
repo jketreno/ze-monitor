@@ -40,41 +40,6 @@ std::string fit_label(const std::string &label, uint32_t max_width, justify_dir_
     return label;
 }
 
-void draw_utilization_bar(int width, double utilization, const std::string &label)
-{
-    int utilization_width = (width * 0.75) - 2; // 75% for the progress bar with []
-    int label_width = width * 0.25 - 1;         // 25% for the label with one space
-
-    // Draw the label (left-aligned, ellipsis if necessary)
-    std::string truncated_label = fit_label(label, label_width, justify_right);
-
-    printw("%-.*s", label_width, truncated_label.c_str());
-
-    // Draw the progress bar (75% of the terminal width)
-    printw(" [");
-    int pos = utilization_width * utilization / 100;
-    for (int i = 0; i < utilization_width; ++i)
-    {
-        if (i == 1)
-        {
-            printw(" %3d%% ", (uint32_t)utilization);
-        }
-        else if (i > 1 && i <= 6)
-        {
-            /* do nothing in % label */
-        }
-        else if (i < pos)
-        {
-            printw("#");
-        }
-        else
-        {
-            printw(" ");
-        }
-    }
-    printw("]");
-}
-
 template <typename T> std::string to_binary_string(T value)
 {
     return std::bitset<sizeof(T) * 8>(value).to_string();
