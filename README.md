@@ -27,9 +27,57 @@ docker compose run --remove-orphans --rm \
 sudo dpkg -i build/ze-monitor-${version}_amd64.deb
 ```
 
-## Build outside container
+# Security
 
-### Prerequisites
+In order for ze-monitor to read the performance metric units (PMU) in the 
+Linux kernel, it needs elevated permissions. The easiest way is to just
+run under sudo (eg., `sudo ze-monitor ...`.)
+
+However, I'm not a fan of running random utilities under sudo.
+
+From [Perf Security](https://www.kernel.org/doc/html/v5.1/admin-guide/perf-security.html) and [man capabilities](https://man7.org/linux/man-pages/man7/capabilities.7.html), the specific capabilities required are:
+
+| Capability          | Reason                                               |
+|:--------------------|:-----------------------------------------------------|
+| CAP_DAC_READ_SEARCH | Bypass all filesystem read access checks             |
+| CAP_PERFMON         | Access to perf_events (vs. overloaded CAP_SYS_ADMIN) |
+| CAP_SYS_PTRACE      | PTRACE_MODE_READ_REALCREDS ptrace access mode check  |
+
+To configure ze-monitor to run with those privileges, you can use `setcap` to set the correct capabilities on ze-monitor. You can further create a user group
+specifically for running the utility and restrict running of that command to 
+users in that group.
+
+## Anyone can run ze-monitor
+
+```bash
+sudo setcap "cap_perfmon,cap_dac_read_search,cap_sys_ptrace=ep" ze-monitor
+getcap ze-monitor
+```
+
+## Only users in group `ze-monitor` can run ze-monitor
+
+```bash
+# Create the ze-monitor group,
+sudo groupadd ze-monitor
+# Set the ze-monitor group to own the utility
+# With the following chmod, this will restrict write access to only root
+sudo chown root:ze-monitor ze-monitor
+# Set permissions on the utility to only be runnable by
+# the owner and the group
+sudo chmod u+rwx,g+rx-w,o-rwx ze-monitor
+# After changing ownership of the ze-utility, set
+# the capabilities
+sudo setcap "cap_perfmon,cap_dac_read_search,cap_sys_ptrace=ep" ze-monitor
+# Add the current user to the group
+sudo usermod -aG ze-monitor $(whoami)
+# You either need to logout/login, or activate the
+# group on the current user
+newgrp ze-monitor
+```
+
+# Build outside container
+
+## Prerequisites
 
 If you would like to build outside of docker, you need the following packages
 installed:
@@ -54,7 +102,7 @@ sudo apt-get install -y \
     libze1 \
     libze-dev
 ```
-### Building
+## Building
 
 ```
 cd build
@@ -62,13 +110,13 @@ cmake ..
 make
 ```
 
-### Running
+## Running
 
 ```
 build/ze-monitor
 ```
 
-### Build and install .deb
+## Build and install .deb
 
 In order to build the .deb package, you need the following
 packages installed:
@@ -105,20 +153,24 @@ build and run on the host by compiling in the container:
 
 ```
 docker compose run --rm ze-monitor build.sh
-version=$(cat src/version.txt)
-build/${version}/ze-monitor
+build/ze-monitor
 ```
 
 The build.sh script will build the binary in /opt/ze-monitor/build,
 which is volume mounted to the host's build directory.
 
-NOTE: Due to needing process maps from /proc, ze-monitor can not be run
-within a docker container with process monitoring.
+NOTE: See [Security](#security) for information on running ze-monitor
+with required kernel access capabilities.
 
 # Running
 
-In order to access the GPU driver engines and process maps, ze-monitor needs
-to be run as root (via sudo)
+NOTE: See [Security](#security) for information on running ze-monitor
+with required kernel access capabilities.
+
+If running within a docker container, the container environment does not
+have access to the host's `/proc/fd`, which is necessary to obtain
+command line information about the process IDs returned when querying the
+kernel for processes accessing the GPU device.
 
 ## List available devices
 
@@ -171,7 +223,8 @@ Device: 8086:A780 (Intel(R) UHD Graphics 770)
  Temperature Sensors: 0
 ```
 
-NOTE: If you run it without 'sudo', no engines will be reported.
+NOTE: See [Security](#security) for information on running ze-monitor
+with required kernel access capabilities.
 
 ## Monitor a given device
 
@@ -179,6 +232,9 @@ NOTE: If you run it without 'sudo', no engines will be reported.
 sudo ze-monitor --device ( PCIID | # | BDF | UUID | /dev/dri/render* ) \
   --interval ms
 ```
+
+NOTE: See [Security](#security) for information on running ze-monitor
+with required kernel access capabilities.
 
 Output:
 

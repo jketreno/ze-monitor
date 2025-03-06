@@ -12,4 +12,6 @@ services:
       - ZE_ENABLE_SYSMAN=1
     privileged: true
     cap_add:
-      - SYS_ADMIN # Needed for access to l0 sysman on the GPU
+      - CAP_DAC_READ_SEARCH # Bypass all filesystem read access checks
+      - CAP_PERFMON         # Access to perf_events (vs. overloaded CAP_SYS_ADMIN)
+      - CAP_SYS_PTRACE      # PTRACE_MODE_READ_REALCREDS ptrace access mode check
