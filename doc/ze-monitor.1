@@ -1,0 +1,78 @@
+.TH ZE-MONITOR 1 "March 2025" "ze-monitor 1.0" "User Commands"
+.SH NAME
+ze-monitor \- A small Level Zero Sysman GPU monitor utility
+.SH SYNOPSIS
+.B ze-monitor
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B ze-monitor
+is a utility for monitoring Intel GPUs using the Level Zero Sysman API.
+It provides real-time information about GPU utilization, temperature, power consumption,
+and other metrics in a ncurses-based interface.
+.SH OPTIONS
+.TP
+.BI "--device " ID
+Device ID to query. Can accept #, BDF, PCI-ID, /dev/dri/*.
+.TP
+.B --help
+Display help text and exit.
+.TP
+.B --info
+Show additional details about --device.
+.TP
+.BI "--interval " ms
+Time interval for polling in milliseconds. Default is 1000.
+.TP
+.B --one-shot
+Gather statistics on --device, output, then exit.
+.TP
+.B --list
+List available devices. If no parameters provided, this is the default command.
+.TP
+.B --version
+Display version information and exit.
+.SH EXAMPLES
+.TP
+Monitor the default GPU with 1 second update interval:
+.B ze-monitor
+.TP
+Monitor a specific GPU identified by BDF:
+.B ze-monitor --device 0000:03:00.0
+.TP
+Monitor a device with a faster update interval (500ms):
+.B ze-monitor --interval 500
+.TP
+Get a single snapshot of GPU metrics:
+.B ze-monitor --one-shot --device 8086:E20B
+.SH NOTES
+The ze-monitor utility requires appropriate permissions to access GPU metrics
+and is configured with the following capabilities:
+
+.TS
+allbox;
+lb lb
+l l.
+Capability	Reason
+CAP_DAC_READ_SEARCH	Bypass all filesystem read access checks
+CAP_PERFMON	Access to perf_events (vs. overloaded CAP_SYS_ADMIN)
+CAP_SYS_PTRACE	PTRACE_MODE_READ_REALCREDS ptrace access mode check
+.TE
+
+Execution of ze-monitor is restricted to only users in the 'ze-monitor' group. Users should be members of the 'ze-monitor' group to use this utility:
+
+.B sudo usermod -a -G ze-monitor $(whoami)
+
+Capabilities configured for the ze-monitor executable:
+
+.SH "SEE ALSO"
+.BR capability (7),
+.BR capabilities (7),
+.BR getpcaps (8),
+.BR setcap (8),
+.BR capsh (1)
+
+.SH COPYRIGHT
+Copyright \(co 2025 James Ketrenos
+.SH AUTHOR
+James Ketrenos <james_zemonitor@ketrenos.com>
+

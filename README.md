@@ -169,8 +169,8 @@ with required kernel access capabilities.
 
 If running within a docker container, the container environment does not
 have access to the host's `/proc/fd`, which is necessary to obtain
-command line information about the process IDs returned when querying the
-kernel for processes accessing the GPU device.
+information about the processes using the GPU. As such, no processes will
+be listed as using the GPU while inside the container.
 
 ## List available devices
 
