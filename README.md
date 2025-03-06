@@ -169,8 +169,9 @@ with required kernel access capabilities.
 
 If running within a docker container, the container environment does not
 have access to the host's `/proc/fd`, which is necessary to obtain
-information about the processes using the GPU. As such, no processes will
-be listed as using the GPU while inside the container.
+information about the processes outside the current container which are
+using the GPU. As such, only processes running within that container running
+ze-monitor will be listed as using the GPU.
 
 ## List available devices
 
