@@ -49,15 +49,26 @@ fail() {
 
 cwd=$(pwd)
 if ask "Do you want to continue"; then
-  if ! cd src; then
-     fail "cd src"
+  cmd=(cd build)
+  if ! "${cmd[@]}"; then
+    fail "${cmd[@]}"
   fi
-  echo "$*" > version.txt
-  if ! make deb; then
-     fail "Unable to make deb"
+  echo "$*" > ../src/version.txt
+  cmd=(cmake ..)
+  if ! "${cmd[@]}"; then
+    fail "${cmd[@]}"
   fi
-  if ! git commit -a -m "version ${version}"; then
-    fail "git commit -a -m 'version ${version}'"
+  cmd=(make)
+  if ! "${cmd[@]}"; then
+    fail "${cmd[@]}"
+  fi
+  cmd=(cpack)
+  if ! "${cmd[@]}"; then
+    fail "${cmd[@]}"
+  fi
+  cmd=(git commit -a -m "version ${version}")
+  if ! "${cmd[@]}"; then
+    fail "${cmd[@]}"
   fi
   cmd=(git tag -a "v${version}" -m "Version ${version}")
   echo "Running: ${cmd[*]}"
@@ -70,7 +81,7 @@ if ask "Do you want to continue"; then
     if ! "${cmd[@]}"; then
       fail "${cmd[@]}"
     fi
-    echo "WIP"
+    echo "WIP: TODO -- cp .deb to releases"
   fi
 fi
 
