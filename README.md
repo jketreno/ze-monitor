@@ -104,10 +104,13 @@ To run the built binary without building a full .deb package, you can
 build and run on the host by compiling in the container:
 
 ```
-docker compose run --rm ze-monitor make
+docker compose run --rm ze-monitor build.sh
 version=$(cat src/version.txt)
-src/build/${version}/ze-monitor
+build/${version}/ze-monitor
 ```
+
+The build.sh script will build the binary in /opt/ze-monitor/build,
+which is volume mounted to the host's build directory.
 
 NOTE: Due to needing process maps from /proc, ze-monitor can not be run
 within a docker container with process monitoring.
