@@ -71,6 +71,12 @@ void draw_utilization_bar(int width, double utilization, const std::string &labe
     printw("]");
 }
 
+void show_device_memory(Device *device)
+{
+    zes_mem_state_t memState = device->getMemoryState();
+    printf(" Memory: %lu\n", memState.size);
+}
+
 void show_device_properties(const Device *device)
 {
     const char *type = nullptr;
@@ -709,6 +715,7 @@ int main(int argc, char *argv[])
         if (device != nullptr)
         {
             show_device_properties(device);
+            show_device_memory(device);
             show_engine_groups(device);
             show_temperatures(device);
             show_power_domains(device);
@@ -727,6 +734,7 @@ int main(int argc, char *argv[])
                        device->getDeviceProperties()->modelName);
 
                 show_device_properties(device);
+                show_device_memory(device);
                 show_engine_groups(device);
                 show_temperatures(device);
                 show_power_domains(device);

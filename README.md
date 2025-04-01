@@ -67,12 +67,12 @@ NOTE: You need 'docker compose' installed. See [Install Docker Engine on Ubuntu]
 git clone https://github.com/jketreno/ze-monitor.git
 cd ze-monitor
 docker compose build
-sudo apt install libze1 libncurses6
 version=$(cat src/version.txt)
 docker compose run --remove-orphans --rm \
   ze-monitor \
   cp /opt/ze-monitor-static/build/ze-monitor-${version}_amd64.deb \
   /opt/ze-monitor/build
+sudo apt install libze1 libncurses6
 sudo dpkg -i build/ze-monitor-${version}_amd64.deb
 ```
 
@@ -230,6 +230,7 @@ Device: 8086:A780 (Intel(R) UHD Graphics 770)
  Is a sub-device: No
  Supports error correcting memory: No
  Supports on-demand page-faulting: No
+ Memory: 0
  Engines: 7
   Engine 1: ZES_ENGINE_GROUP_RENDER_SINGLE
   Engine 2: ZES_ENGINE_GROUP_MEDIA_DECODE_SINGLE
