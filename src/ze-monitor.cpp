@@ -472,6 +472,7 @@ public:
                     }
                 }
 
+                device->updateTemperatures();
                 for (uint32_t i = 0; i < device->getTemperatureCount(); ++i)
                 {
                     wprintw(stdscr, "Sensor %d: %.1fC", i, device->getTemperature(i));
@@ -487,7 +488,7 @@ public:
                 }
                 if (total_energy != 0)
                 {
-                    wprintw(stdscr, "Power usage: %.01fW", total_energy);
+                    wprintw(stdscr, "Power usage: %.01fW ", total_energy);
                     move(++row, 0);
                 }
 
