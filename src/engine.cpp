@@ -1,5 +1,6 @@
 #include "engine.h"
 #include <iostream>             // for cerr, cout
+#include "helpers.h"           // for ze_error_to_str
 
 bool Engine::initializeEngine()
 {
@@ -8,13 +9,16 @@ bool Engine::initializeEngine()
     ret = zesEngineGetProperties(engine, &properties);
     if (ret != ZE_RESULT_SUCCESS)
     {
+        std::cerr << "zesEngineGetProperties failed for engine handle " << engine
+                  << ": error 0x" << std::hex << ret << " (" << ze_error_to_str(ret) << ")" << std::endl;
         return false;
     }
 
     ret = updateStats();
     if (ret != ZE_RESULT_SUCCESS)
     {
-        std::cerr << "Failed to get activity for engine." << std::endl;
+        std::cerr << "Failed to get activity for engine handle " << engine
+                  << ": error 0x" << std::hex << ret << " (" << ze_error_to_str(ret) << ")" << std::endl;
         return false;
     }
 
@@ -29,7 +33,8 @@ ze_result_t Engine::updateStats() {
     ret = zesEngineGetActivity(engine, &stats);
     if (ret != ZE_RESULT_SUCCESS)
     {
-        std::cerr << "Failed to get activity for engine." << std::endl;
+        std::cerr << "zesEngineGetActivity failed for engine handle " << engine
+                  << ": error 0x" << std::hex << ret << " (" << ze_error_to_str(ret) << ")" << std::endl;
         return ret;
     }
 
