@@ -519,7 +519,13 @@ int main(int argc, char *argv[])
         return buf;
     };
 
-    auto component = Renderer([&]() -> Element {
+    struct UIState {
+        int process_offset = 0;
+    };
+
+    UIState state;
+
+    auto component = Renderer([&state, device, &format_bytes]() -> Element {
         device->updateTemperatures();
         device->updateProcesses();
         // Device summary
@@ -544,7 +550,10 @@ int main(int argc, char *argv[])
         // Process table
         Elements process_rows;
         process_rows.push_back(hbox({text("PID") | size(WIDTH, EQUAL, 10), text("COMMAND") | size(WIDTH, EQUAL, 30), text("USED MEM") | size(WIDTH, EQUAL, 15), text("SHARED MEM") | size(WIDTH, EQUAL, 15), text("FLAGS")}));
-        for (uint32_t i = 0; i < device->getProcessCount(); ++i) {
+        int visible_processes = 10;
+        int start = state.process_offset;
+        int end = std::min(start + visible_processes, (int)device->getProcessCount());
+        for (int i = start; i < end; ++i) {
             auto proc = device->getProcessInfo(i);
             process_rows.push_back(hbox({
                 text(std::to_string(proc->getProcessState()->processId)) | size(WIDTH, EQUAL, 10),
@@ -563,23 +572,20 @@ int main(int argc, char *argv[])
                 hbox({
                     text("Device: ") | bold,
                     text(device->getDeviceProperties()->modelName) | color(Color::Cyan),
-                    text(" | PCI: ") | bold,
-                    text(std::to_string(device->getDeviceProperties()->core.vendorId) + ":" + std::to_string(device->getDeviceProperties()->core.deviceId))
+                    text(" | Memory: ") | bold,
+                    text(format_bytes(mem.size - mem.free) + " / " + format_bytes(mem.size)) | color(Color::Green)
+                }),
+                hbox({
+                    text("Memory Usage: "),
+                    gauge(1.0 - (double)mem.free / mem.size) | color(Color::Green),
+                    text(" " + std::to_string((int)(100 * (1.0 - (double)mem.free / mem.size))) + "%")
                 }),
                 hbox({
                     text("Temp: ") | bold,
                     text(std::to_string((int)temp) + "C") | color(Color::Yellow),
                     text(" | Power: ") | bold,
-                    text(std::to_string((int)power) + "W") | color(Color::Red),
-                    text(" | Memory: ") | bold,
-                    text(format_bytes(mem.size - mem.free) + " / " + format_bytes(mem.size)) | color(Color::Green)
+                    text(std::to_string((int)power) + "W") | color(Color::Red)
                 })
-            }),
-            // Memory bar
-            hbox({
-                text("Memory Usage: "),
-                gauge(1.0 - (double)mem.free / mem.size) | color(Color::Green),
-                text(" " + std::to_string((int)(100 * (1.0 - (double)mem.free / mem.size))) + "%")
             }) | border,
             // Engine bars
             text("Engine Utilization:") | bold,
@@ -588,10 +594,17 @@ int main(int argc, char *argv[])
             text("Processes:") | bold,
             process_table_element | border,
             // Quit hint
-            hbox({text("Press ESC to quit.")}) | center
+            hbox({text("Use ↑↓ to scroll processes, ESC to quit.")}) | center
         }) | border;
-    }) | CatchEvent([&](Event event) {
-        if (event == Event::Escape) {
+    }) | CatchEvent([&state, device, &screen](Event event) {
+        if (event == Event::ArrowUp) {
+            state.process_offset = std::max(0, state.process_offset - 1);
+            return true;
+        } else if (event == Event::ArrowDown) {
+            int max_offset = std::max(0, (int)device->getProcessCount() - 10);
+            state.process_offset = std::min(max_offset, state.process_offset + 1);
+            return true;
+        } else if (event == Event::Escape) {
             screen.Exit();
             return true;
         }
