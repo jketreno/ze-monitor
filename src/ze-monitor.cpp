@@ -845,11 +845,11 @@ int main(int argc, char *argv[]) {
         case ViewMode::POWER: {
           Elements power_detail;
           power_detail.push_back(
-              hbox({text("DOMAIN") | bold | size(WIDTH, LESS_THAN, 15),
-                    text("POWER") | bold | size(WIDTH, LESS_THAN, 15),
-                    text("ENERGY") | bold | size(WIDTH, LESS_THAN, 15),
-                    text("CONTROL") | bold | size(WIDTH, LESS_THAN, 10),
-                    text("SUB-DEV") | bold | size(WIDTH, LESS_THAN, 10)}) |
+              hbox({text("DOMAIN") | bold | size(WIDTH, EQUAL, 9), separator(),
+                    text("POWER") | bold | size(WIDTH, EQUAL, 5), separator(),
+                    text("ENERGY") | bold | size(WIDTH, EQUAL, 6), separator(),
+                    text("CONTROL") | bold | size(WIDTH, EQUAL, 7), separator(),
+                    text("SUB-DEV") | bold | size(WIDTH, EQUAL, 10)}) |
               color(Color::White));
 
           for (uint32_t i = 0; i < device->getPowerDomainCount(); ++i) {
@@ -859,18 +859,22 @@ int main(int argc, char *argv[]) {
 
             power_detail.push_back(hbox(
                 {text("Domain " + std::to_string(i + 1)) |
-                     size(WIDTH, LESS_THAN, 15) | color(Color::Cyan),
-                 text(std::to_string((int)energy) + "W") |
-                     size(WIDTH, LESS_THAN, 15) | color(Color::Yellow),
-                 text("N/A") | size(WIDTH, LESS_THAN, 15) |
-                     color(Color::GrayDark),
+                     size(WIDTH, EQUAL, 9) | color(Color::Cyan),
+                 separator(),
+                 text(energy >= 0 ? (std::to_string((int)energy) + "W")
+                                  : "N/A") |
+                     size(WIDTH, EQUAL, 5) | color(Color::Yellow),
+                 separator(),
+                 text("N/A") | size(WIDTH, EQUAL, 6) | color(Color::GrayDark),
+                 separator(),
                  text(properties->canControl ? "YES" : "NO") |
-                     size(WIDTH, LESS_THAN, 10) |
+                     size(WIDTH, EQUAL, 7) |
                      color(properties->canControl ? Color::Green : Color::Red),
+                 separator(),
                  text(properties->onSubdevice
                           ? std::to_string(properties->subdeviceId)
                           : "N/A") |
-                     size(WIDTH, LESS_THAN, 10) | color(Color::GrayDark)}));
+                     size(WIDTH, EQUAL, 10) | color(Color::GrayDark)}));
           }
 
           // PSU information
