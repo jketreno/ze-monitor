@@ -398,6 +398,7 @@ int main(int argc, char *argv[])
 {
     bool showInfo = false;
     bool listDevices = true;
+    bool one_shot = false;
     arg_search_t argSearch;
 
     // Process command-line arguments
@@ -421,6 +422,10 @@ int main(int argc, char *argv[])
         else if (arg == "--info")
         {
             showInfo = true;
+        }
+        else if (arg == "--one-shot")
+        {
+            one_shot = true;
         }
         else if (arg == "--list")
         {
@@ -539,6 +544,10 @@ int main(int argc, char *argv[])
     };
 
     UIState state;
+    // Buffer holding the final rendered screen to print on exit
+    std::string final_frame_buffer;
+    // Keep the last rendered Element so we can render it to a Screen on exit
+    Element last_rendered_element;
 
     // Auto-refresh timer
     auto refresh_timer = [&] {
@@ -549,6 +558,9 @@ int main(int argc, char *argv[])
         }
         return false;
     };
+
+    // For one-shot mode we want to render once then exit
+    bool one_shot_rendered = false;
 
     auto component = Renderer([&]() -> Element {
         // Auto refresh every second
@@ -917,7 +929,19 @@ int main(int argc, char *argv[])
             vbox(std::move(key_hints)) | border | color(Color::Blue)
         );
 
-        return vbox(std::move(main_content));
+    Element root = vbox(std::move(main_content));
+    last_rendered_element = root;
+
+    // If one-shot was requested, request exit after the first render
+    if (one_shot && !one_shot_rendered) {
+        one_shot_rendered = true;
+        if (auto act = ScreenInteractive::Active()) {
+            // Post a custom event so the CatchEvent handler can print and exit
+            act->PostEvent(Event::Custom);
+        }
+    }
+
+    return root;
 
     }) | CatchEvent([&](Event event) {
         // View switching
@@ -993,6 +1017,79 @@ int main(int argc, char *argv[])
         
         // Quit
         else if (event == Event::Escape || event == Event::Character('q') || event == Event::Character('Q')) {
+            // Print the current screen content immediately to the main
+            // terminal using WithRestoredIO so it persists after exit.
+            if (auto active = ScreenInteractive::Active()) {
+                try {
+                    auto closure = active->WithRestoredIO([&]() {
+                        bool printed = false;
+                        try {
+                            // Attempt to render the last Element we produced.
+                            auto term = Terminal::Size();
+                            ftxui::Screen screen(term.dimx, term.dimy);
+                            Render(screen, last_rendered_element);
+                            std::string s = screen.ToString();
+                            if (!s.empty()) {
+                                fwrite(s.c_str(), 1, s.size(), stdout);
+                                fflush(stdout);
+                                printed = true;
+                            }
+                        } catch (...) {
+                            // Ignore render errors and fall back to active->ToString().
+                        }
+
+                        if (!printed) {
+                            std::string out = active->ToString();
+                            if (!out.empty()) {
+                                fwrite(out.c_str(), 1, out.size(), stdout);
+                                fflush(stdout);
+                            }
+                        }
+                    });
+                    closure();
+                } catch (...) {
+                    // ignore
+                }
+            }
+            screen.Exit();
+            return true;
+        }
+
+        // Custom event: used for periodic refresh. If one-shot mode is active
+        // we treat it as the signal to print and exit; otherwise let the
+        // renderer handle it as a refresh by returning false.
+        else if (event == Event::Custom) {
+            if (!one_shot) {
+                // Not a one-shot exit; allow the refresh to proceed.
+                return false;
+            }
+            if (auto active = ScreenInteractive::Active()) {
+                try {
+                    auto closure = active->WithRestoredIO([&]() {
+                        bool printed = false;
+                        try {
+                            auto term = Terminal::Size();
+                            ftxui::Screen screen(term.dimx, term.dimy);
+                            Render(screen, last_rendered_element);
+                            std::string s = screen.ToString();
+                            if (!s.empty()) {
+                                fwrite(s.c_str(), 1, s.size(), stdout);
+                                fflush(stdout);
+                                printed = true;
+                            }
+                        } catch (...) {}
+
+                        if (!printed) {
+                            std::string out = active->ToString();
+                            if (!out.empty()) {
+                                fwrite(out.c_str(), 1, out.size(), stdout);
+                                fflush(stdout);
+                            }
+                        }
+                    });
+                    closure();
+                } catch (...) {}
+            }
             screen.Exit();
             return true;
         }
@@ -1009,8 +1106,42 @@ int main(int argc, char *argv[])
     });
     refresh_thread.detach();
 
-    // Main event loop
-    screen.Loop(component);
+    // Ensure we capture the final frame when exiting. Wrap the Loop with
+    // a restored-IO closure so printing the frame doesn't interfere with
+    // the alternate screen buffer.
+    if (auto active = ScreenInteractive::Active()) {
+        // Run the UI loop. After it returns, print the captured frame
+        // buffer to the terminal while restoring the terminal state.
+        active->Loop(component);
+
+        if (!final_frame_buffer.empty()) {
+            auto closure = active->WithRestoredIO([&]() {
+                // Print the captured final frame to stdout so it remains
+                // visible in the shell after the program exits.
+                printf("%s\n", final_frame_buffer.c_str());
+            });
+            closure();
+        } else if (one_shot && last_rendered_element) {
+            try {
+                auto closure = active->WithRestoredIO([&]() {
+                    auto term = Terminal::Size();
+                    ftxui::Screen screen(term.dimx, term.dimy);
+                    Render(screen, last_rendered_element);
+                    std::string s = screen.ToString();
+                    if (!s.empty()) {
+                        fwrite(s.c_str(), 1, s.size(), stdout);
+                        fflush(stdout);
+                    }
+                });
+                closure();
+            } catch (...) {
+                // ignore
+            }
+        }
+    } else {
+        // Fallback: run the loop normally.
+        screen.Loop(component);
+    }
 
     return 0;
 }
