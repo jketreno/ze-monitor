@@ -29,377 +29,334 @@ https://github.com/intel/compute-runtime/tree/master/programmers-guide
 using namespace ftxui;
 
 // Helper to format bytes
-std::string format_bytes(uint64_t bytes)
-{
-    const char *suffixes[] = {"B", "KB", "MB", "GB", "TB"};
-    int i = 0;
-    double count = bytes;
-    while (count >= 1024 && i < 4)
-    {
-        count /= 1024;
-        ++i;
-    }
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%.1f %s", count, suffixes[i]);
-    return buf;
+std::string format_bytes(uint64_t bytes) {
+  const char *suffixes[] = {"B", "KB", "MB", "GB", "TB"};
+  int i = 0;
+  double count = bytes;
+  while (count >= 1024 && i < 4) {
+    count /= 1024;
+    ++i;
+  }
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%.1f %s", count, suffixes[i]);
+  return buf;
 }
 
 // Helper to get color based on percentage
-Color get_percentage_color(double percentage)
-{
-    if (percentage < 30)
-        return Color::Green;
-    if (percentage < 60)
-        return Color::Yellow;
-    if (percentage < 80)
-        return Color::RGB(255, 215, 0);
-    return Color::Red;
+Color get_percentage_color(double percentage) {
+  if (percentage < 30)
+    return Color::Green;
+  if (percentage < 60)
+    return Color::Yellow;
+  if (percentage < 80)
+    return Color::RGB(255, 215, 0);
+  return Color::Red;
 }
 
 // Helper to get temperature color
-Color get_temp_color(double temp)
-{
-    if (temp < 50)
-        return Color::Cyan;
-    if (temp < 70)
-        return Color::Green;
-    if (temp < 80)
-        return Color::Yellow;
-    if (temp < 90)
-        return Color::RGB(255, 215, 0);
-    return Color::Red;
+Color get_temp_color(double temp) {
+  if (temp < 50)
+    return Color::Cyan;
+  if (temp < 70)
+    return Color::Green;
+  if (temp < 80)
+    return Color::Yellow;
+  if (temp < 90)
+    return Color::RGB(255, 215, 0);
+  return Color::Red;
 }
 
-void show_device_memory(Device *device)
-{
-    zes_mem_state_t memState = device->getMemoryState();
-    printf(" Memory: %lu\n", memState.size);
+void show_device_memory(Device *device) {
+  zes_mem_state_t memState = device->getMemoryState();
+  printf(" Memory: %lu\n", memState.size);
 }
 
-void show_device_properties(const Device *device)
-{
-    const char *type = nullptr;
+void show_device_properties(const Device *device) {
+  const char *type = nullptr;
 
-    const zes_device_properties_t *properties = device->getDeviceProperties();
-    const zes_device_ext_properties_t *ext_properties =
-        device->getDeviceExtProperties();
-    const zes_pci_properties_t *pci_properties = device->getDevicePciProperties();
+  const zes_device_properties_t *properties = device->getDeviceProperties();
+  const zes_device_ext_properties_t *ext_properties =
+      device->getDeviceExtProperties();
+  const zes_pci_properties_t *pci_properties = device->getDevicePciProperties();
 
-    std::string uuid_str = uuid_to_string(&ext_properties->uuid);
-    std::ostringstream output;
-    printf("Device: %04X:%04X (%s)\n",
+  std::string uuid_str = uuid_to_string(&ext_properties->uuid);
+  std::ostringstream output;
+  printf("Device: %04X:%04X (%s)\n",
+         device->getDeviceProperties()->core.vendorId,
+         device->getDeviceProperties()->core.deviceId,
+         device->getDeviceProperties()->modelName);
+
+  output << " UUID: " << uuid_str << std::endl;
+
+  output << " BDF: " << std::hex << std::uppercase << std::setw(4)
+         << std::setfill('0') << pci_properties->address.domain << ":"
+         << std::setw(4) << std::setfill('0') << pci_properties->address.bus
+         << ":" << std::setw(4) << std::setfill('0')
+         << pci_properties->address.device << ":" << std::setw(4)
+         << std::setfill('0') << pci_properties->address.function << std::endl;
+
+  output << " PCI ID: " << std::setw(4) << std::setfill('0')
+         << properties->core.vendorId << ":" << std::setw(4)
+         << std::setfill('0') << properties->core.deviceId << std::endl;
+
+  output << " Subdevices: " << properties->numSubdevices << std::endl;
+  output << " Serial Number: " << properties->serialNumber << std::endl;
+  output << " Board Number: " << properties->boardNumber << std::endl;
+  output << " Brand Name: " << properties->brandName << std::endl;
+  output << " Model Name: " << properties->modelName << std::endl;
+  output << " Vendor Name: " << properties->vendorName << std::endl;
+  output << " Driver Version: " << properties->driverVersion << std::endl;
+
+  switch (ext_properties->type) {
+  case ZES_DEVICE_TYPE_GPU:
+    type = "GPU";
+    break;
+  case ZES_DEVICE_TYPE_CPU:
+    type = "CPU";
+    break;
+  case ZES_DEVICE_TYPE_FPGA:
+    type = "FPGA";
+    break;
+  case ZES_DEVICE_TYPE_MCA:
+    type = "MCA";
+    break;
+  case ZES_DEVICE_TYPE_VPU:
+    type = "VPU";
+    break;
+  default:
+    type = "UNKNOWN";
+    break;
+  }
+
+  output << " Type: " << type << std::endl;
+
+  output << " Is integrated with host: "
+         << ((ext_properties->flags & ZES_DEVICE_PROPERTY_FLAG_INTEGRATED)
+                 ? "Yes"
+                 : "No")
+         << std::endl;
+  output << " Is a sub-device: "
+         << ((ext_properties->flags & ZES_DEVICE_PROPERTY_FLAG_SUBDEVICE)
+                 ? "Yes"
+                 : "No")
+         << std::endl;
+  output << " Supports error correcting memory: "
+         << ((ext_properties->flags & ZES_DEVICE_PROPERTY_FLAG_ECC) ? "Yes"
+                                                                    : "No")
+         << std::endl;
+  output << " Supports on-demand page-faulting: "
+         << ((ext_properties->flags & ZES_DEVICE_PROPERTY_FLAG_ONDEMANDPAGING)
+                 ? "Yes"
+                 : "No")
+         << std::endl;
+
+  printf("%s", output.str().c_str());
+}
+
+void show_engine_group_properties(const Engine *engine) {
+  printf("   %s", engine_type_to_str(engine->getEngineProperties()->type));
+  if (engine->getEngineProperties()->onSubdevice) {
+    printf(" (Sub-device ID: %04X)",
+           engine->getEngineProperties()->subdeviceId);
+  }
+  printf("\n");
+}
+
+void show_engine_groups(const Device *device) {
+  uint32_t enginesCount = device->getEngineCount();
+  std::ostringstream output;
+
+  printf(" Engines: %d\n", enginesCount);
+  if (enginesCount == 0) {
+    return;
+  }
+
+  for (uint32_t i = 0; i < enginesCount; ++i) {
+    const Engine *engine = device->getEngine(i);
+    printf("  Engine %d: %s", i + 1,
+           engine_type_to_str(engine->getEngineProperties()->type));
+    if (engine->getEngineProperties()->onSubdevice) {
+      printf(" (Sub-device ID: %04X)",
+             engine->getEngineProperties()->subdeviceId);
+    }
+    printf("\n");
+  }
+}
+
+void show_power_domains(const Device *device) {
+  uint32_t powerDomainsCount = device->getPowerDomainCount();
+  std::ostringstream output;
+
+  printf(" Power Domains: %d\n", powerDomainsCount);
+  if (powerDomainsCount == 0) {
+    return;
+  }
+
+  for (uint32_t i = 0; i < powerDomainsCount; ++i) {
+    const PowerDomain *powerDomain = device->getPowerDomain(i);
+    const zes_power_properties_t *properties =
+        powerDomain->getPowerDomainProperties();
+    if (properties->onSubdevice) {
+      printf("  Power Domain %d: Sub Device: %04X, Can Control: %s, Threshold "
+             "supported: %s\n",
+             i + 1, properties->subdeviceId,
+             properties->canControl ? "Yes" : "No",
+             properties->isEnergyThresholdSupported ? "Yes" : "No");
+    } else {
+      printf("  Power Domain %d: Can Control: %s, Threshold supported: %s\n",
+             i + 1, properties->canControl ? "Yes" : "No",
+             properties->isEnergyThresholdSupported ? "Yes" : "No");
+    }
+  }
+}
+
+void show_psus(const Device *device) {
+  uint32_t psuCount = device->getPSUCount();
+  std::ostringstream output;
+
+  printf(" Power Supply Units: %d\n", psuCount);
+  if (psuCount == 0) {
+    return;
+  }
+
+  for (uint32_t i = 0; i < psuCount; ++i) {
+    const PSU *psu = device->getPSU(i);
+    const zes_psu_properties_t *properties = psu->getPSUProperties();
+    if (properties->onSubdevice) {
+      printf(
+          "  Power Supply Unit %d: Sub Device: %04X, Fan: %s, Amp Limit: %d\n",
+          i + 1, properties->subdeviceId, properties->haveFan ? "Yes" : "No",
+          properties->ampLimit);
+    } else {
+      printf("  Power Supply Unit %d: Fan: %s, Amp Limit: %d\n", i + 1,
+             properties->haveFan ? "Yes" : "No", properties->ampLimit);
+    }
+    printf("\n");
+  }
+}
+
+ze_result_t list_devices(std::vector<std::unique_ptr<Device>> &devices) {
+  // Walk through each device and display properties
+  for (uint32_t j = 0; j < devices.size(); ++j) {
+    const Device *device = devices[j].get();
+
+    printf("Device %d: %04X:%04X (%s)\n", j + 1,
            device->getDeviceProperties()->core.vendorId,
            device->getDeviceProperties()->core.deviceId,
            device->getDeviceProperties()->modelName);
+  }
 
-    output << " UUID: " << uuid_str << std::endl;
-
-    output << " BDF: " << std::hex << std::uppercase << std::setw(4)
-           << std::setfill('0') << pci_properties->address.domain << ":"
-           << std::setw(4) << std::setfill('0') << pci_properties->address.bus
-           << ":" << std::setw(4) << std::setfill('0')
-           << pci_properties->address.device << ":" << std::setw(4)
-           << std::setfill('0') << pci_properties->address.function << std::endl;
-
-    output << " PCI ID: " << std::setw(4) << std::setfill('0')
-           << properties->core.vendorId << ":" << std::setw(4)
-           << std::setfill('0') << properties->core.deviceId << std::endl;
-
-    output << " Subdevices: " << properties->numSubdevices << std::endl;
-    output << " Serial Number: " << properties->serialNumber << std::endl;
-    output << " Board Number: " << properties->boardNumber << std::endl;
-    output << " Brand Name: " << properties->brandName << std::endl;
-    output << " Model Name: " << properties->modelName << std::endl;
-    output << " Vendor Name: " << properties->vendorName << std::endl;
-    output << " Driver Version: " << properties->driverVersion << std::endl;
-
-    switch (ext_properties->type)
-    {
-    case ZES_DEVICE_TYPE_GPU:
-        type = "GPU";
-        break;
-    case ZES_DEVICE_TYPE_CPU:
-        type = "CPU";
-        break;
-    case ZES_DEVICE_TYPE_FPGA:
-        type = "FPGA";
-        break;
-    case ZES_DEVICE_TYPE_MCA:
-        type = "MCA";
-        break;
-    case ZES_DEVICE_TYPE_VPU:
-        type = "VPU";
-        break;
-    default:
-        type = "UNKNOWN";
-        break;
-    }
-
-    output << " Type: " << type << std::endl;
-
-    output << " Is integrated with host: "
-           << ((ext_properties->flags & ZES_DEVICE_PROPERTY_FLAG_INTEGRATED)
-                   ? "Yes"
-                   : "No")
-           << std::endl;
-    output << " Is a sub-device: "
-           << ((ext_properties->flags & ZES_DEVICE_PROPERTY_FLAG_SUBDEVICE)
-                   ? "Yes"
-                   : "No")
-           << std::endl;
-    output << " Supports error correcting memory: "
-           << ((ext_properties->flags & ZES_DEVICE_PROPERTY_FLAG_ECC) ? "Yes"
-                                                                      : "No")
-           << std::endl;
-    output << " Supports on-demand page-faulting: "
-           << ((ext_properties->flags & ZES_DEVICE_PROPERTY_FLAG_ONDEMANDPAGING)
-                   ? "Yes"
-                   : "No")
-           << std::endl;
-
-    printf("%s", output.str().c_str());
+  return ZE_RESULT_SUCCESS;
 }
 
-void show_engine_group_properties(const Engine *engine)
-{
-    printf("   %s", engine_type_to_str(engine->getEngineProperties()->type));
-    if (engine->getEngineProperties()->onSubdevice)
-    {
-        printf(" (Sub-device ID: %04X)",
-               engine->getEngineProperties()->subdeviceId);
-    }
-    printf("\n");
-}
+std::vector<std::unique_ptr<Device>> get_devices() {
+  std::vector<std::unique_ptr<Device>> devices;
 
-void show_engine_groups(const Device *device)
-{
-    uint32_t enginesCount = device->getEngineCount();
-    std::ostringstream output;
+  // Discover all the drivers
+  uint32_t driversCount = 0;
+  zesDriverGet(&driversCount, nullptr);
 
-    printf(" Engines: %d\n", enginesCount);
-    if (enginesCount == 0)
-    {
-        return;
-    }
-
-    for (uint32_t i = 0; i < enginesCount; ++i)
-    {
-        const Engine *engine = device->getEngine(i);
-        printf("  Engine %d: %s", i + 1,
-               engine_type_to_str(engine->getEngineProperties()->type));
-        if (engine->getEngineProperties()->onSubdevice)
-        {
-            printf(" (Sub-device ID: %04X)",
-                   engine->getEngineProperties()->subdeviceId);
-        }
-        printf("\n");
-    }
-}
-
-void show_power_domains(const Device *device)
-{
-    uint32_t powerDomainsCount = device->getPowerDomainCount();
-    std::ostringstream output;
-
-    printf(" Power Domains: %d\n", powerDomainsCount);
-    if (powerDomainsCount == 0)
-    {
-        return;
-    }
-
-    for (uint32_t i = 0; i < powerDomainsCount; ++i)
-    {
-        const PowerDomain *powerDomain = device->getPowerDomain(i);
-        const zes_power_properties_t *properties =
-            powerDomain->getPowerDomainProperties();
-        if (properties->onSubdevice)
-        {
-            printf("  Power Domain %d: Sub Device: %04X, Can Control: %s, Threshold "
-                   "supported: %s\n",
-                   i + 1, properties->subdeviceId,
-                   properties->canControl ? "Yes" : "No",
-                   properties->isEnergyThresholdSupported ? "Yes" : "No");
-        }
-        else
-        {
-            printf("  Power Domain %d: Can Control: %s, Threshold supported: %s\n",
-                   i + 1, properties->canControl ? "Yes" : "No",
-                   properties->isEnergyThresholdSupported ? "Yes" : "No");
-        }
-    }
-}
-
-void show_psus(const Device *device)
-{
-    uint32_t psuCount = device->getPSUCount();
-    std::ostringstream output;
-
-    printf(" Power Supply Units: %d\n", psuCount);
-    if (psuCount == 0)
-    {
-        return;
-    }
-
-    for (uint32_t i = 0; i < psuCount; ++i)
-    {
-        const PSU *psu = device->getPSU(i);
-        const zes_psu_properties_t *properties = psu->getPSUProperties();
-        if (properties->onSubdevice)
-        {
-            printf(
-                "  Power Supply Unit %d: Sub Device: %04X, Fan: %s, Amp Limit: %d\n",
-                i + 1, properties->subdeviceId, properties->haveFan ? "Yes" : "No",
-                properties->ampLimit);
-        }
-        else
-        {
-            printf("  Power Supply Unit %d: Fan: %s, Amp Limit: %d\n", i + 1,
-                   properties->haveFan ? "Yes" : "No", properties->ampLimit);
-        }
-        printf("\n");
-    }
-}
-
-ze_result_t list_devices(std::vector<std::unique_ptr<Device>> &devices)
-{
-    // Walk through each device and display properties
-    for (uint32_t j = 0; j < devices.size(); ++j)
-    {
-        const Device *device = devices[j].get();
-
-        printf("Device %d: %04X:%04X (%s)\n", j + 1,
-               device->getDeviceProperties()->core.vendorId,
-               device->getDeviceProperties()->core.deviceId,
-               device->getDeviceProperties()->modelName);
-    }
-
-    return ZE_RESULT_SUCCESS;
-}
-
-std::vector<std::unique_ptr<Device>> get_devices()
-{
-    std::vector<std::unique_ptr<Device>> devices;
-
-    // Discover all the drivers
-    uint32_t driversCount = 0;
-    zesDriverGet(&driversCount, nullptr);
-
-    if (driversCount == 0)
-    {
-        fprintf(stderr, "No ze sysman drivers found.\n");
-        return devices;
-    }
-
-    std::unique_ptr<zes_driver_handle_t[]> drivers =
-        std::make_unique<zes_driver_handle_t[]>(driversCount);
-    if (!drivers)
-    {
-        fprintf(stderr, "Memory allocation failed for drivers\n");
-        return devices;
-    }
-
-    zesDriverGet(&driversCount, drivers.get());
-
-    for (uint32_t driver = 0; driver < driversCount; ++driver)
-    {
-        // Discover devices in a driver
-        uint32_t deviceCount = 0;
-        zesDeviceGet(drivers[driver], &deviceCount, nullptr);
-        if (deviceCount == 0)
-        {
-            printf("Driver %i:\n  No devices found\n", driver);
-            continue;
-        }
-
-        std::unique_ptr<zes_device_handle_t[]> deviceHandles =
-            std::make_unique<zes_device_handle_t[]>(deviceCount);
-        if (!deviceHandles)
-        {
-            printf("Memory allocation failed for devices\n");
-            return devices;
-        }
-
-        zesDeviceGet(drivers[driver], &deviceCount, deviceHandles.get());
-
-        // Walk through each device and get properties
-        for (uint32_t device = 0; device < deviceCount; ++device)
-        {
-            devices.emplace_back(std::make_unique<Device>(deviceHandles[device]));
-        }
-    }
-
+  if (driversCount == 0) {
+    fprintf(stderr, "No ze sysman drivers found.\n");
     return devices;
+  }
+
+  std::unique_ptr<zes_driver_handle_t[]> drivers =
+      std::make_unique<zes_driver_handle_t[]>(driversCount);
+  if (!drivers) {
+    fprintf(stderr, "Memory allocation failed for drivers\n");
+    return devices;
+  }
+
+  zesDriverGet(&driversCount, drivers.get());
+
+  for (uint32_t driver = 0; driver < driversCount; ++driver) {
+    // Discover devices in a driver
+    uint32_t deviceCount = 0;
+    zesDeviceGet(drivers[driver], &deviceCount, nullptr);
+    if (deviceCount == 0) {
+      printf("Driver %i:\n  No devices found\n", driver);
+      continue;
+    }
+
+    std::unique_ptr<zes_device_handle_t[]> deviceHandles =
+        std::make_unique<zes_device_handle_t[]>(deviceCount);
+    if (!deviceHandles) {
+      printf("Memory allocation failed for devices\n");
+      return devices;
+    }
+
+    zesDeviceGet(drivers[driver], &deviceCount, deviceHandles.get());
+
+    // Walk through each device and get properties
+    for (uint32_t device = 0; device < deviceCount; ++device) {
+      devices.emplace_back(std::make_unique<Device>(deviceHandles[device]));
+    }
+  }
+
+  return devices;
 }
 
 int32_t find_device_index(arg_search_t search,
-                          std::vector<std::unique_ptr<Device>> &devices)
-{
-    pciid_t pciid;
-    zes_uuid_t uuid;
-    bdf_t bdf;
+                          std::vector<std::unique_ptr<Device>> &devices) {
+  pciid_t pciid;
+  zes_uuid_t uuid;
+  bdf_t bdf;
 
-    for (uint32_t i = 0; i < devices.size(); ++i)
-    {
-        const Device *device = devices[i].get();
-        bool match = false;
-        switch (search.type)
-        {
-        case INDEX:
-            match = i + 1 == std::get<uint32_t>(search.data);
-            break;
-        case PCIID:
-            pciid = std::get<pciid_t>(search.data);
-            match = (pciid.vendor == device->getDeviceProperties()->core.vendorId &&
-                     pciid.device == device->getDeviceProperties()->core.deviceId);
-            break;
-        case BDF:
-            bdf = std::get<bdf_t>(search.data);
-            match =
-                (bdf.domain == device->getDevicePciProperties()->address.domain &&
-                 bdf.bus == device->getDevicePciProperties()->address.bus &&
-                 bdf.device == device->getDevicePciProperties()->address.device &&
-                 bdf.function == device->getDevicePciProperties()->address.function);
-            break;
-        case UUID:
-            uuid = std::get<zes_uuid_t>(search.data);
-            uint32_t k;
-            for (k = 0; k < ZE_MAX_DEVICE_UUID_SIZE; ++k)
-            {
-                if (uuid.id[k] != device->getDeviceExtProperties()->uuid.id[k])
-                {
-                    break;
-                }
-            }
-            match = k == ZE_MAX_DEVICE_UUID_SIZE;
-            break;
-        default:
-            match = false;
-            break;
+  for (uint32_t i = 0; i < devices.size(); ++i) {
+    const Device *device = devices[i].get();
+    bool match = false;
+    switch (search.type) {
+    case INDEX:
+      match = i + 1 == std::get<uint32_t>(search.data);
+      break;
+    case PCIID:
+      pciid = std::get<pciid_t>(search.data);
+      match = (pciid.vendor == device->getDeviceProperties()->core.vendorId &&
+               pciid.device == device->getDeviceProperties()->core.deviceId);
+      break;
+    case BDF:
+      bdf = std::get<bdf_t>(search.data);
+      match =
+          (bdf.domain == device->getDevicePciProperties()->address.domain &&
+           bdf.bus == device->getDevicePciProperties()->address.bus &&
+           bdf.device == device->getDevicePciProperties()->address.device &&
+           bdf.function == device->getDevicePciProperties()->address.function);
+      break;
+    case UUID:
+      uuid = std::get<zes_uuid_t>(search.data);
+      uint32_t k;
+      for (k = 0; k < ZE_MAX_DEVICE_UUID_SIZE; ++k) {
+        if (uuid.id[k] != device->getDeviceExtProperties()->uuid.id[k]) {
+          break;
         }
-
-        if (match)
-        {
-            return i;
-        }
+      }
+      match = k == ZE_MAX_DEVICE_UUID_SIZE;
+      break;
+    default:
+      match = false;
+      break;
     }
 
-    return -1;
-}
-
-void show_temperatures(Device *device)
-{
-    device->updateTemperatures();
-
-    for (uint32_t i = 0; i < device->getTemperatureCount(); ++i)
-    {
-        printf("  Sensor %d: %.1fC", i, device->getTemperature(i));
+    if (match) {
+      return i;
     }
+  }
+
+  return -1;
 }
 
-void copyright()
-{
-    printf("ze-monitor: A small Level Zero Sysman GPU monitor utility\n");
-    printf("Copyright (C) 2025 James Ketrenos\n");
+void show_temperatures(Device *device) {
+  device->updateTemperatures();
+
+  for (uint32_t i = 0; i < device->getTemperatureCount(); ++i) {
+    printf("  Sensor %d: %.1fC", i, device->getTemperature(i));
+  }
+}
+
+void copyright() {
+  printf("ze-monitor: A small Level Zero Sysman GPU monitor utility\n");
+  printf("Copyright (C) 2025 James Ketrenos\n");
 }
 
 #ifndef APP_VERSION
@@ -407,224 +364,179 @@ void copyright()
 #endif
 void version() { printf("Version: %s\n", APP_VERSION); }
 
-void usage()
-{
-    const uint32_t indent = 2;
-    const uint32_t option_len = 12;
-    const char *options[][2] = {
-        {"device ID",
-         "Device ID to query. Can accept #, BDF, PCI-ID, /dev/dri/*."},
-        {"help", "This text."},
-        {"info", "Show additional details about device."},
-        {"version", "Version info."},
-        {nullptr, nullptr}};
-    printf("\n");
-    printf("usage: ze-monitor [OPTIONS]\n");
-    printf("\n");
+void usage() {
+  const uint32_t indent = 2;
+  const uint32_t option_len = 12;
+  const char *options[][2] = {
+      {"device ID",
+       "Device ID to query. Can accept #, BDF, PCI-ID, /dev/dri/*."},
+      {"help", "This text."},
+      {"info", "Show additional details about device."},
+      {"version", "Version info."},
+      {nullptr, nullptr}};
+  printf("\n");
+  printf("usage: ze-monitor [OPTIONS]\n");
+  printf("\n");
 
-    for (uint32_t i = 0; options[i][0] != nullptr; ++i)
-    {
-        printf("%*s --%-*s %s\n", indent, "", option_len, options[i][0],
-               options[i][1]);
-    }
-    printf("\n");
+  for (uint32_t i = 0; options[i][0] != nullptr; ++i) {
+    printf("%*s --%-*s %s\n", indent, "", option_len, options[i][0],
+           options[i][1]);
+  }
+  printf("\n");
 }
 
-std::string ellipses(std::string str, int width, bool from_end = false)
-{
-    if ((int)str.length() <= width)
-    {
-        return str;
-    }
-    if (width <= 3)
-    {
-        return str.substr(0, width);
-    }
-    if (from_end)
-    {
-        return "..." + str.substr(str.length() - (width - 3));
-    }
-    return str.substr(0, width - 3) + "...";
+std::string ellipses(std::string str, int width, bool from_end = false) {
+  if ((int)str.length() <= width) {
+    return str;
+  }
+  if (width <= 3) {
+    return str.substr(0, width);
+  }
+  if (from_end) {
+    return "..." + str.substr(str.length() - (width - 3));
+  }
+  return str.substr(0, width - 3) + "...";
 }
 
-int main(int argc, char *argv[])
-{
-    bool showInfo = false;
-    bool listDevices = true;
-    bool one_shot = false;
-    arg_search_t argSearch;
+int main(int argc, char *argv[]) {
+  bool showInfo = false;
+  bool listDevices = true;
+  bool one_shot = false;
+  arg_search_t argSearch;
 
-    // Process command-line arguments
-    for (int i = 1; i < argc; ++i)
-    {
-        std::string arg = argv[i];
+  // Process command-line arguments
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
 
-        // Look for --device argument
-        if (arg == "--device" && i + 1 < argc)
-        {
-            std::string device_arg = argv[i + 1];
-            argSearch = process_device_argument(device_arg);
-            if (argSearch.type == INVALID)
-            {
-                std::cerr << "Invalid argument: " << arg << std::endl;
-                return -1;
-            }
-            i++; // Skip the device argument
-            listDevices = false;
-        }
-        else if (arg == "--info")
-        {
-            showInfo = true;
-        }
-        else if (arg == "--one-shot")
-        {
-            one_shot = true;
-        }
-        else if (arg == "--list")
-        {
-            listDevices = true;
-        }
-        else if (arg == "--version")
-        {
-            copyright();
-            version();
-            return 0;
-        }
-        else if (arg == "--help")
-        {
-            copyright();
-            usage();
-            return 0;
-        }
-        else
-        {
-            std::cerr << "Unknown argument: " << arg << std::endl;
-            return 1;
-        }
-    }
-
-    if (zesInit(0) != ZE_RESULT_SUCCESS)
-    {
-        printf("Can't initialize the API\n");
+    // Look for --device argument
+    if (arg == "--device" && i + 1 < argc) {
+      std::string device_arg = argv[i + 1];
+      argSearch = process_device_argument(device_arg);
+      if (argSearch.type == INVALID) {
+        std::cerr << "Invalid argument: " << arg << std::endl;
         return -1;
+      }
+      i++; // Skip the device argument
+      listDevices = false;
+    } else if (arg == "--info") {
+      showInfo = true;
+    } else if (arg == "--one-shot") {
+      one_shot = true;
+    } else if (arg == "--list") {
+      listDevices = true;
+    } else if (arg == "--version") {
+      copyright();
+      version();
+      return 0;
+    } else if (arg == "--help") {
+      copyright();
+      usage();
+      return 0;
+    } else {
+      std::cerr << "Unknown argument: " << arg << std::endl;
+      return 1;
     }
+  }
 
-    std::vector<std::unique_ptr<Device>> devices = get_devices();
+  if (zesInit(0) != ZE_RESULT_SUCCESS) {
+    printf("Can't initialize the API\n");
+    return -1;
+  }
 
-    Device *device = nullptr;
-    int32_t index = -1;
-    if (argSearch.type != INVALID)
-    {
-        index = find_device_index(argSearch, devices);
-        if (index != -1)
-        {
-            device = devices[index].get();
-        }
-        else
-        {
-            printf("--device %s not found.\n", argSearch.match.c_str());
-            list_devices(devices);
-            exit(-1);
-        }
+  std::vector<std::unique_ptr<Device>> devices = get_devices();
+
+  Device *device = nullptr;
+  int32_t index = -1;
+  if (argSearch.type != INVALID) {
+    index = find_device_index(argSearch, devices);
+    if (index != -1) {
+      device = devices[index].get();
+    } else {
+      printf("--device %s not found.\n", argSearch.match.c_str());
+      list_devices(devices);
+      exit(-1);
     }
+  }
 
-    if (device == nullptr && !showInfo)
-    {
-        listDevices = true;
+  if (device == nullptr && !showInfo) {
+    listDevices = true;
+  }
+
+  if (listDevices) {
+    list_devices(devices);
+    return 0;
+  }
+
+  // If --info was requested, either show the single --device or if no device
+  // was provided, list all devices.
+  if (showInfo) {
+    if (device != nullptr) {
+      show_device_properties(device);
+      show_device_memory(device);
+      show_engine_groups(device);
+      show_temperatures(device);
+      show_power_domains(device);
+      show_psus(device);
+    } else {
+      for (uint32_t i = 0; i < devices.size(); ++i) {
+        device = devices[i].get();
+
+        printf("Device %d: %04X:%04X (%s)\n", i + 1,
+               device->getDeviceProperties()->core.vendorId,
+               device->getDeviceProperties()->core.deviceId,
+               device->getDeviceProperties()->modelName);
+
+        show_device_properties(device);
+        show_device_memory(device);
+        show_engine_groups(device);
+        show_temperatures(device);
+        show_power_domains(device);
+        show_psus(device);
+      }
     }
+    return 0;
+  }
 
-    if (listDevices)
-    {
-        list_devices(devices);
-        return 0;
+  // FTXUI main UI loop
+  auto screen = ScreenInteractive::Fullscreen();
+
+  enum class ViewMode { OVERVIEW, ENGINES, PROCESSES, POWER, THERMAL };
+
+  struct UIState {
+    ViewMode view_mode = ViewMode::OVERVIEW;
+    int process_offset = 0;
+    int engine_offset = 0;
+    int thermal_offset = 0;
+    int power_offset = 0;
+    bool show_help = false;
+    std::chrono::steady_clock::time_point refresh_time =
+        std::chrono::steady_clock::now();
+  };
+
+  UIState state;
+  // Buffer holding the final rendered screen to print on exit
+  std::string final_frame_buffer;
+  // Keep the last rendered Element so we can render it to a Screen on exit
+  Element last_rendered_element;
+
+  // Auto-refresh timer
+  auto refresh_timer = [&] {
+    auto now = std::chrono::steady_clock::now();
+    if (now - state.refresh_time > std::chrono::seconds(1)) {
+      state.refresh_time = now;
+      return true;
     }
+    return false;
+  };
 
-    // If --info was requested, either show the single --device or if no device
-    // was provided, list all devices.
-    if (showInfo)
-    {
-        if (device != nullptr)
-        {
-            show_device_properties(device);
-            show_device_memory(device);
-            show_engine_groups(device);
-            show_temperatures(device);
-            show_power_domains(device);
-            show_psus(device);
-        }
-        else
-        {
-            for (uint32_t i = 0; i < devices.size(); ++i)
-            {
-                device = devices[i].get();
+  // For one-shot mode we want to render once then exit
+  bool one_shot_rendered = false;
 
-                printf("Device %d: %04X:%04X (%s)\n", i + 1,
-                       device->getDeviceProperties()->core.vendorId,
-                       device->getDeviceProperties()->core.deviceId,
-                       device->getDeviceProperties()->modelName);
-
-                show_device_properties(device);
-                show_device_memory(device);
-                show_engine_groups(device);
-                show_temperatures(device);
-                show_power_domains(device);
-                show_psus(device);
-            }
-        }
-        return 0;
-    }
-
-    // FTXUI main UI loop
-    auto screen = ScreenInteractive::Fullscreen();
-
-    enum class ViewMode
-    {
-        OVERVIEW,
-        ENGINES,
-        PROCESSES,
-        POWER,
-        THERMAL
-    };
-
-    struct UIState
-    {
-        ViewMode view_mode = ViewMode::OVERVIEW;
-        int process_offset = 0;
-        int engine_offset = 0;
-        int thermal_offset = 0;
-        int power_offset = 0;
-        bool show_help = false;
-        std::chrono::steady_clock::time_point refresh_time =
-            std::chrono::steady_clock::now();
-    };
-
-    UIState state;
-    // Buffer holding the final rendered screen to print on exit
-    std::string final_frame_buffer;
-    // Keep the last rendered Element so we can render it to a Screen on exit
-    Element last_rendered_element;
-
-    // Auto-refresh timer
-    auto refresh_timer = [&]
-    {
-        auto now = std::chrono::steady_clock::now();
-        if (now - state.refresh_time > std::chrono::seconds(1))
-        {
-            state.refresh_time = now;
-            return true;
-        }
-        return false;
-    };
-
-    // For one-shot mode we want to render once then exit
-    bool one_shot_rendered = false;
-
-    auto component =
-        Renderer([&]() -> Element
-                 {
-    auto terminal = ftxui::Terminal::Size();
-    int screen_width = terminal.dimx;
-    int screen_height = terminal.dimy;
+  auto component =
+      Renderer([&]() -> Element {
+        auto terminal = ftxui::Terminal::Size();
+        int screen_width = terminal.dimx;
+        int screen_height = terminal.dimy;
 
         // Auto refresh every second
         if (refresh_timer()) {
@@ -661,8 +573,7 @@ int main(int argc, char *argv[])
                            color(Color::Cyan),
                        text(" | ") | color(Color::GrayDark),
                        text("View: ") | color(Color::GrayDark),
-                       text([&]()
-                            {
+                       text([&]() {
                          switch (state.view_mode) {
                          case ViewMode::OVERVIEW:
                            return "Overview";
@@ -675,7 +586,8 @@ int main(int argc, char *argv[])
                          case ViewMode::THERMAL:
                            return "Thermal";
                          }
-                         return "Unknown"; }()) |
+                         return "Unknown";
+                       }()) |
                            bold | color(Color::Yellow)}),
                  hbox({notflex(text("Memory: ") | color(Color::White)),
                        mem.size > 0 ? xflex_grow(gauge(mem_usage_pct / 100.0) |
@@ -698,7 +610,8 @@ int main(int argc, char *argv[])
                        separator(), text(" Temp: ") | color(Color::White),
                        text(std::to_string((int)avg_temp) + "°C") |
                            color(get_temp_color(avg_temp))})}) |
-            size(HEIGHT, GREATER_THAN, 2) | border | color(Color::Cyan) | notflex;
+            size(HEIGHT, GREATER_THAN, 2) | border | color(Color::Cyan) |
+            notflex;
 
         main_content.push_back(header | notflex);
 
@@ -708,10 +621,8 @@ int main(int argc, char *argv[])
           // Engine utilization overview
           Elements engine_rows;
           engine_rows.push_back(
-              hbox({text("ENGINE") | bold | size(WIDTH, EQUAL, 30),
-                    separator(),
-                    text("UTILIZATION") | bold | flex,
-                    separator(),
+              hbox({text("ENGINE") | bold | size(WIDTH, EQUAL, 30), separator(),
+                    text("UTILIZATION") | bold | flex, separator(),
                     text("SUB-DEV") | bold | size(WIDTH, EQUAL, 10)}) |
               color(Color::White));
 
@@ -723,20 +634,20 @@ int main(int argc, char *argv[])
                     ? std::to_string(engine->getEngineProperties()->subdeviceId)
                     : "N/A";
 
-            engine_rows.push_back(
-                hbox({notflex(text(ellipses(engine_type_to_str(
-                                                engine->getEngineProperties()->type),
-                                            30, true)) |
-                              size(WIDTH, EQUAL, 30) | color(Color::Cyan)),
-                      separator(),
-                      xflex_grow(gauge(util / 100.0) |
-                                 color(get_percentage_color(util))),
-                      notflex(text(" " + std::to_string((int)util) + "%") |
-                              size(WIDTH, EQUAL, 5) |
-                              color(get_percentage_color(util))),
-                      separator(),
-                      notflex(text(subdev) | size(WIDTH, EQUAL, 10) |
-                              color(Color::GrayDark))}));
+            engine_rows.push_back(hbox(
+                {notflex(text(ellipses(engine_type_to_str(
+                                           engine->getEngineProperties()->type),
+                                       30, true)) |
+                         size(WIDTH, EQUAL, 30) | color(Color::Cyan)),
+                 separator(),
+                 xflex_grow(gauge(util / 100.0) |
+                            color(get_percentage_color(util))),
+                 notflex(text(" " + std::to_string((int)util) + "%") |
+                         size(WIDTH, EQUAL, 5) |
+                         color(get_percentage_color(util))),
+                 separator(),
+                 notflex(text(subdev) | size(WIDTH, EQUAL, 10) |
+                         color(Color::GrayDark))}));
           }
 
           main_content.push_back(
@@ -747,16 +658,16 @@ int main(int argc, char *argv[])
           // Top processes
           Elements proc_rows;
           proc_rows.push_back(
-              hbox({text("PID") | bold | size(WIDTH, EQUAL, 8),
-                    separator(),
-                    text("COMMAND") | bold | flex,
-                    separator(),
-                    text("MEMORY") | bold | size(WIDTH, EQUAL, 12),
-                    separator(),
+              hbox({text("PID") | bold | size(WIDTH, EQUAL, 8), separator(),
+                    text("COMMAND") | bold | flex, separator(),
+                    text("MEMORY") | bold | size(WIDTH, EQUAL, 12), separator(),
                     text("SHARED") | bold | size(WIDTH, EQUAL, 12)}) |
               color(Color::White));
 
-          int proc_limit = std::min((int)(screen_height - (6 + device->getEngineCount() + 4 + (state.show_help ? 5 : 3) + 2)), (int)device->getProcessCount());
+          int proc_limit =
+              std::min((int)(screen_height - (6 + device->getEngineCount() + 4 +
+                                              (state.show_help ? 5 : 3) + 2)),
+                       (int)device->getProcessCount());
           for (int i = 0; i < proc_limit; ++i) {
             auto proc = device->getProcessInfo(i);
             auto mem_pct =
@@ -789,10 +700,8 @@ int main(int argc, char *argv[])
         case ViewMode::ENGINES: {
           Elements engine_detail;
           engine_detail.push_back(
-              hbox({text("ENGINE") | bold | size(WIDTH, EQUAL, 15),
-                    separator(),
-                    text("UTILIZATION") | bold | flex,
-                    separator(),
+              hbox({text("ENGINE") | bold | size(WIDTH, EQUAL, 15), separator(),
+                    text("UTILIZATION") | bold | flex, separator(),
                     text("SUB-DEVICE") | bold | size(WIDTH, EQUAL, 15),
                     separator(),
                     text("STATUS") | bold | size(WIDTH, EQUAL, 15)}) |
@@ -1053,9 +962,9 @@ int main(int argc, char *argv[])
           }
         }
 
-        return root; }) |
-        CatchEvent([&](Event event)
-                   {
+        return root;
+      }) |
+      CatchEvent([&](Event event) {
         // View switching
         if (event == Event::Character('1')) {
           state.view_mode = ViewMode::OVERVIEW;
@@ -1214,41 +1123,36 @@ int main(int argc, char *argv[])
           return true;
         }
 
-        return false; });
+        return false;
+      });
 
-    // Auto-refresh component
-    std::thread refresh_thread([&]()
-                               {
+  // Auto-refresh component
+  std::thread refresh_thread([&]() {
     while (true) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1000));
       screen.PostEvent(Event::Custom);
-    } });
-    refresh_thread.detach();
+    }
+  });
+  refresh_thread.detach();
 
-    // Ensure we capture the final frame when exiting. Wrap the Loop with
-    // a restored-IO closure so printing the frame doesn't interfere with
-    // the alternate screen buffer.
-    if (auto active = ScreenInteractive::Active())
-    {
-        // Run the UI loop. After it returns, print the captured frame
-        // buffer to the terminal while restoring the terminal state.
-        active->Loop(component);
+  // Ensure we capture the final frame when exiting. Wrap the Loop with
+  // a restored-IO closure so printing the frame doesn't interfere with
+  // the alternate screen buffer.
+  if (auto active = ScreenInteractive::Active()) {
+    // Run the UI loop. After it returns, print the captured frame
+    // buffer to the terminal while restoring the terminal state.
+    active->Loop(component);
 
-        if (!final_frame_buffer.empty())
-        {
-            auto closure = active->WithRestoredIO([&]()
-                                                  {
+    if (!final_frame_buffer.empty()) {
+      auto closure = active->WithRestoredIO([&]() {
         // Print the captured final frame to stdout so it remains
         // visible in the shell after the program exits.
-        printf("%s\n", final_frame_buffer.c_str()); });
-            closure();
-        }
-        else if (one_shot && last_rendered_element)
-        {
-            try
-            {
-                auto closure = active->WithRestoredIO([&]()
-                                                      {
+        printf("%s\n", final_frame_buffer.c_str());
+      });
+      closure();
+    } else if (one_shot && last_rendered_element) {
+      try {
+        auto closure = active->WithRestoredIO([&]() {
           auto term = Terminal::Size();
           ftxui::Screen screen(term.dimx, term.dimy);
           Render(screen, last_rendered_element);
@@ -1256,20 +1160,17 @@ int main(int argc, char *argv[])
           if (!s.empty()) {
             fwrite(s.c_str(), 1, s.size(), stdout);
             fflush(stdout);
-          } });
-                closure();
-            }
-            catch (...)
-            {
-                // ignore
-            }
-        }
+          }
+        });
+        closure();
+      } catch (...) {
+        // ignore
+      }
     }
-    else
-    {
-        // Fallback: run the loop normally.
-        screen.Loop(component);
-    }
+  } else {
+    // Fallback: run the loop normally.
+    screen.Loop(component);
+  }
 
-    return 0;
+  return 0;
 }
