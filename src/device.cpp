@@ -139,6 +139,10 @@ bool Device::initializeDevice()
 
 const zes_mem_state_t Device::getMemoryState()
 {
+    if (memoryCached) {
+        return cachedMemoryState;
+    }
+
     zes_mem_state_t ret;
     ret.free = 0;
     ret.size = 0;
@@ -146,10 +150,16 @@ const zes_mem_state_t Device::getMemoryState()
     for (uint32_t i = 0; i < memoryHandles.size(); ++i)
     {
         zes_mem_state_t memState;
+        ze_result_t result = zesMemoryGetState(memoryHandles[i], &memState);
+        if (result == ZE_RESULT_SUCCESS) {
+            ret.free += memState.free;
+            ret.size += memState.size;
+        }
+    }
 
-        zesMemoryGetState(memoryHandles[i], &memState);
-        ret.free += memState.free;
-        ret.size += memState.size;
+    if (ret.size > 0) {
+        cachedMemoryState = ret;
+        memoryCached = true;
     }
 
     return ret;

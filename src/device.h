@@ -14,8 +14,10 @@
 
 class Device {
 public:
-    Device(zes_device_handle_t handle) : device(handle), processMonitor(handle), temperatureMonitor(handle)
+    Device(zes_device_handle_t handle) : device(handle), processMonitor(handle), temperatureMonitor(handle), memoryCached(false)
     {
+        cachedMemoryState.free = 0;
+        cachedMemoryState.size = 0;
         std::memset(&deviceExtProperties, 0, sizeof(deviceExtProperties));
         deviceExtProperties.stype = ZES_STRUCTURE_TYPE_DEVICE_EXT_PROPERTIES;
         std::memset(&deviceProperties, 0, sizeof(deviceProperties));
@@ -62,6 +64,9 @@ private:
 
     ProcessMonitor processMonitor;
     TemperatureMonitor temperatureMonitor;
+
+    zes_mem_state_t cachedMemoryState;
+    bool memoryCached;
 
     bool initializeDevice();
 };
