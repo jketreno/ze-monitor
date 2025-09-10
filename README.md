@@ -111,9 +111,10 @@ If you would like to build outside of docker, you need the following packages in
 
 ```
 sudo apt-get install -y \
-    build-essential \
-    libfmt-dev \
-    libncurses-dev
+  build-essential \
+  libfmt-dev \
+  libncurses-dev \
+  libftxui-dev
 ```
 
 In addition, you need the Intel drivers installed, which are available from the `kobuk-team/intel-graphics` PPA:

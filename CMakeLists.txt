@@ -33,14 +33,20 @@ set(SOURCES
     src/device.cpp
     src/power_domain.cpp
     src/psu.cpp
-    src/ze-ncurses.cpp
 )
 
 # Executable
 add_executable(ze-monitor ${SOURCES})
 
-# Link libraries
-target_link_libraries(ze-monitor ncurses panel ze_loader)
+# Find FTXUI using pkg-config
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FTXUI REQUIRED ftxui)
+message(STATUS "FTXUI_INCLUDE_DIRS: ${FTXUI_INCLUDE_DIRS}")
+message(STATUS "FTXUI_LIBRARIES: ${FTXUI_LIBRARIES}")
+
+# Include directories and link libraries
+include_directories(${FTXUI_INCLUDE_DIRS})
+target_link_libraries(ze-monitor ${FTXUI_LIBRARIES} ze_loader)
 
 # Installation
 install(TARGETS ze-monitor DESTINATION /usr/bin)

@@ -2,7 +2,6 @@
 
 #include <fmt/core.h>
 #include <level_zero/zes_api.h>
-#include <ncurses.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -28,7 +27,6 @@ typedef enum
 } justify_dir_t;
 
 std::string fit_label(const std::string &label, uint32_t max_width, justify_dir_t justify);
-void draw_utilization_bar(int width, double utilization, const std::string &label);
 
 typedef struct
 {

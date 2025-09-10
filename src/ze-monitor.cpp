@@ -16,60 +16,32 @@ and
 #include "power_domain.h"
 #include "process.h"     // for ze_error_to_str, engine_type_to_str
 #include "temperature.h" // for ze_error_to_str, engine_type_to_str
-#include "ze-ncurses.h"
-#include <algorithm>            // for min
-#include <exception>            // for exception
-#include <fstream>              // for basic_ostream, operator<<, endl, bas...
-#include <iomanip>              // for operator<<, setfill, setw
-#include <iostream>             // for cerr, cout
-#include <level_zero/ze_api.h>  // for _ze_result_t, ze_result_t, ZE_MAX_DE...
-#include <level_zero/zes_api.h> // for zes_device_handle_t, _zes_structure_...
-#include <memory>               // for unique_ptr, allocator, make_unique
-#include <ncurses.h>            // for move, wprintw, stdscr, noecho, cbreak
-#include <sstream>              // for basic_ostringstream
-#include <stdexcept>            // for runtime_error
-#include <stdint.h>             // for uint32_t, uint64_t
-#include <stdio.h>              // for printf, fprintf, stderr, size_t, NULL
-#include <stdlib.h>             // for free, malloc, exit
-#include <string>               // for char_traits, basic_string, operator<<
-#include <sys/types.h>          // for pid_t
-#include <variant>              // for get
-#include <vector>               // for vector
+#include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/dom/elements.hpp>
+#include <ftxui/dom/node.hpp>
+#include <ftxui/screen/color.hpp>
+#include <ftxui/component/component.hpp>
+#include <thread>
+#include <chrono>
+using namespace ftxui;
+#include <chrono>
+using namespace ftxui;
 
-void draw_utilization_bar(int width, double utilization, const std::string &label)
-{
-    int utilization_width = (width * 0.75) - 2; // 75% for the progress bar with []
-    int label_width = width * 0.25 - 1;         // 25% for the label with one space
-
-    // Draw the label (left-aligned, ellipsis if necessary)
-    std::string truncated_label = fit_label(label, label_width, justify_right);
-
-    printw("%-.*s", label_width, truncated_label.c_str());
-
-    // Draw the progress bar (75% of the terminal width)
-    printw(" [");
-    int pos = utilization_width * utilization / 100;
-    for (int i = 0; i < utilization_width; ++i)
-    {
-        if (i == 1)
-        {
-            printw(" %3d%% ", (uint32_t)utilization);
-        }
-        else if (i > 1 && i <= 6)
-        {
-            /* do nothing in % label */
-        }
-        else if (i < pos)
-        {
-            printw("#");
-        }
-        else
-        {
-            printw(" ");
-        }
+// Helper to format bytes
+std::string format_bytes(uint64_t bytes) {
+    const char* suffixes[] = {"B", "KB", "MB", "GB", "TB"};
+    int i = 0;
+    double count = bytes;
+    while (count >= 1024 && i < 4) {
+        count /= 1024;
+        ++i;
     }
-    printw("]");
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%.1f %s", count, suffixes[i]);
+    return buf;
 }
+
+
 
 void show_device_memory(Device *device)
 {
@@ -362,208 +334,6 @@ int32_t find_device_index(arg_search_t search, std::vector<std::unique_ptr<Devic
     return -1;
 }
 
-uint32_t show_process_info(uint32_t row, uint32_t width, const ProcessInfo *processInfo)
-{
-    const zes_process_state_t *state = processInfo->getProcessState();
-    const uint32_t pid_size = 6;
-    wprintw(stdscr, "%*d %-*s",
-            pid_size,
-            state->processId,
-            width - pid_size,
-            fit_label(processInfo->getCommandLine(), width - pid_size, justify_middle).c_str());
-    move(++row, 0);
-    wprintw(stdscr, "%-*s MEM: %-12lu SHR: %-12lu FLAGS: %s",
-            pid_size,
-            "",
-            state->memSize, state->sharedSize,
-            engine_flags_to_str(state->engines).c_str());
-    move(++row, 0);
-    return row;
-}
-
-class XeNcurses
-{
-public:
-    XeNcurses()
-    {
-        // Initialize ncurses
-        if (initscr() == NULL)
-        {
-            throw std::runtime_error("Error initializing ncurses.");
-        }
-        cbreak();
-        noecho();
-        curs_set(0);
-        keypad(stdscr, TRUE);
-    }
-
-    ~XeNcurses()
-    {
-        // Save screen content before exiting
-        int rows, cols;
-        getmaxyx(stdscr, rows, cols);
-
-        std::vector<std::string> screen_content(rows);
-        for (int i = 0; i < rows; ++i)
-        {
-            std::vector<char> line(cols + 1, '\0');
-            move(i, 0);
-            innstr(line.data(), cols); // Capture line from ncurses screen
-            screen_content[i] = std::string(line.data());
-        }
-
-        // Restore terminal state
-        endwin();
-
-        // Restore screen contents
-        for (const auto &line : screen_content)
-        {
-            std::cout << line << std::endl;
-        }
-    }
-
-    void run(Device *device, uint32_t interval, bool oneShot)
-    {
-        std::ostringstream output;
-
-        timeout(interval); // Non-blocking input
-
-        /* Enter loop to gather rum-time statistics */
-        while (true)
-        {
-            uint32_t height, width;
-
-            getmaxyx(stdscr, height, width);
-
-            try
-            {
-                uint32_t headings = 0;
-                move(0, 0);
-                wprintw(stdscr, "Device: %04X:%04X (%s)",
-                        device->getDeviceProperties()->core.vendorId,
-                        device->getDeviceProperties()->core.deviceId,
-                        device->getDeviceProperties()->modelName);
-                move(++headings, 0);
-
-                zes_mem_state_t memState = device->getMemoryState();
-
-                uint32_t row = headings;
-
-                wprintw(stdscr, "Total Memory: %12lu",
-                        memState.size);
-                move(++row, 0);
-
-                if (memState.size != 0)
-                {
-                    double utilization = 100 * memState.free / memState.size;
-                    draw_utilization_bar(width, utilization, "Free memory: ");
-                    move(++row, 0);
-                }
-
-                for (uint32_t i = 0; i < device->getEngineCount(); ++i)
-                {
-                    Engine *engine = device->getEngine(i);
-                    const zes_engine_properties_t *engineProperties = engine->getEngineProperties();
-                    if (engineProperties != nullptr)
-                    {
-                        double utilization = engine->getEngineUtilization();
-                        draw_utilization_bar(width, utilization, engine_type_to_str(engine->getEngineProperties()->type));
-                        move(++row, 0);
-                    }
-                }
-
-                device->updateTemperatures();
-                for (uint32_t i = 0; i < device->getTemperatureCount(); ++i)
-                {
-                    wprintw(stdscr, "Sensor %d: %.1fC", i, device->getTemperature(i));
-                    move(++row, 0);
-                }
-
-                double total_energy = 0;
-                for (uint32_t i = 0; i < device->getPowerDomainCount(); ++i)
-                {
-                    PowerDomain *powerDomain = device->getPowerDomain(i);
-                    double energy = powerDomain->getPowerDomainEnergy();
-                    total_energy += energy;
-                }
-                if (total_energy != 0)
-                {
-                    wprintw(stdscr, "Power usage: %.01fW ", total_energy);
-                    move(++row, 0);
-                }
-
-                for (uint32_t i = 0; i < device->getPSUCount(); ++i)
-                {
-                    const PSU *psu = device->getPSU(i);
-                    const zes_psu_state_t *state = psu->getPSUState();
-                    wprintw(stdscr, "Power Supply Unit %d: %s", i, voltage_status_to_str(state->voltStatus));
-                    move(++row, 0);
-                }
-
-                ze_result_t ret = device->updateProcesses();
-                if (ret == ZE_RESULT_SUCCESS && device->getProcessCount() > 0)
-                {
-                    uint32_t pid_size = 6;
-                    //
-                    // Header begins
-                    for (uint32_t i = 0; i < width; i++)
-                    {
-                        waddch(stdscr, '-');
-                    }
-                    move(++row, 0);
-                    wprintw(stdscr, "%*s COMMAND-LINE", pid_size, "PID");
-                    move(++row, 0);
-                    wprintw(stdscr, "%-*s %-17s %-17s %s",
-                            pid_size, "", "USED MEMORY", "SHARED MEMORY", "ENGINE FLAGS");
-                    move(++row, 0);
-                    for (uint32_t i = 0; i < width; i++)
-                    {
-                        waddch(stdscr, '-');
-                    }
-                    move(++row, 0);
-                    // Header ends
-                    //
-                    for (uint32_t i = 0; i < device->getProcessCount(); ++i)
-                    {
-                        row = show_process_info(row, width, device->getProcessInfo(i));
-                    }
-                }
-
-                while (row < height)
-                {
-                    clrtoeol();
-                    move(++row, 0);
-                }
-
-                refresh(); // Refresh the screen to show the message
-
-                if (oneShot)
-                {
-                    return;
-                }
-
-                switch (getch())
-                {
-                case ERR:
-                    break;
-                case KEY_UP:
-                    printw("Up arrow key pressed\n");
-                    break;
-                case 'q':
-                    wprintw(stdscr, "Exiting.");
-                    return;
-                default:
-                    break;
-                }
-            }
-            catch (const std::exception &e)
-            {
-                std::cerr << "Error: " << e.what() << "\n";
-            }
-        }
-    }
-};
-
 void show_temperatures(Device *device)
 {
     device->updateTemperatures();
@@ -596,8 +366,6 @@ void usage()
         {"device ID", "Device ID to query. Can accept #, BDF, PCI-ID, /dev/dri/*."},
         {"help", "This text."},
         {"info", "Show additional details about device."},
-        {"interval ms", "Time interval for polling. Default 1000."},
-        {"one-shot", "Gather statistics, output, then exit."},
         {"version", "Version info."},
         {nullptr, nullptr}};
     printf("\n");
@@ -615,9 +383,7 @@ int main(int argc, char *argv[])
 {
     bool showInfo = false;
     bool listDevices = true;
-    bool oneShot = false;
     arg_search_t argSearch;
-    uint32_t interval = 1000;
 
     // Process command-line arguments
     for (int i = 1; i < argc; ++i)
@@ -637,18 +403,9 @@ int main(int argc, char *argv[])
             i++; // Skip the device argument
             listDevices = false;
         }
-        else if (arg == "--interval" && i + 1 < argc)
-        {
-            interval = strtoul(argv[i + 1], nullptr, 10);
-            i++; // Skip the device argument
-        }
         else if (arg == "--info")
         {
             showInfo = true;
-        }
-        else if (arg == "--one-shot")
-        {
-            oneShot = true;
         }
         else if (arg == "--list")
         {
@@ -745,19 +502,104 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    // WIP
-    // Playing around with ncurses a bit more...
-    //    ze_ncurses_main(device, interval, oneShot);
-    //    exit(0);
-    try
-    {
-        XeNcurses app;
-        app.run(device, interval, oneShot);
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << "Error: " << e.what() << std::endl;
-    }
+    // FTXUI main UI loop
+    auto screen = ScreenInteractive::FitComponent();
+
+    // Helper to format bytes
+    auto format_bytes = [](uint64_t bytes) -> std::string {
+        const char* suffixes[] = {"B", "KB", "MB", "GB", "TB"};
+        int i = 0;
+        double count = bytes;
+        while (count >= 1024 && i < 4) {
+            count /= 1024;
+            ++i;
+        }
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.1f %s", count, suffixes[i]);
+        return buf;
+    };
+
+    auto component = Renderer([&]() -> Element {
+        device->updateTemperatures();
+        device->updateProcesses();
+        // Device summary
+        auto mem = device->getMemoryState();
+        auto temp = device->getTemperatureCount() > 0 ? device->getTemperature(0) : 0.0;
+        auto power = device->getPowerDomainCount() > 0 ? device->getPowerDomain(0)->getPowerDomainEnergy() : 0.0;
+
+        // Engine utilization bars
+        Elements engine_bars;
+        for (uint32_t i = 0; i < device->getEngineCount(); ++i) {
+            auto engine = device->getEngine(i);
+            double util = engine->getEngineUtilization();
+            engine_bars.push_back(
+                hbox({
+                    text(engine_type_to_str(engine->getEngineProperties()->type)) | size(WIDTH, EQUAL, 20),
+                    gauge(util / 100.0) | color(Color::Green),
+                    text(" " + std::to_string((int)util) + "%")
+                })
+            );
+        }
+
+        // Process table
+        Elements process_rows;
+        process_rows.push_back(hbox({text("PID") | size(WIDTH, EQUAL, 10), text("COMMAND") | size(WIDTH, EQUAL, 30), text("USED MEM") | size(WIDTH, EQUAL, 15), text("SHARED MEM") | size(WIDTH, EQUAL, 15), text("FLAGS")}));
+        for (uint32_t i = 0; i < device->getProcessCount(); ++i) {
+            auto proc = device->getProcessInfo(i);
+            process_rows.push_back(hbox({
+                text(std::to_string(proc->getProcessState()->processId)) | size(WIDTH, EQUAL, 10),
+                text(proc->getCommandLine()) | size(WIDTH, EQUAL, 30),
+                text(format_bytes(proc->getProcessState()->memSize)) | size(WIDTH, EQUAL, 15),
+                text(format_bytes(proc->getProcessState()->sharedSize)) | size(WIDTH, EQUAL, 15),
+                text(engine_flags_to_str(proc->getProcessState()->engines))
+            }));
+        }
+        auto process_table_element = vbox(std::move(process_rows));
+
+        // Compose the UI
+        return vbox({
+            // Device summary
+            vbox({
+                hbox({
+                    text("Device: ") | bold,
+                    text(device->getDeviceProperties()->modelName) | color(Color::Cyan),
+                    text(" | PCI: ") | bold,
+                    text(std::to_string(device->getDeviceProperties()->core.vendorId) + ":" + std::to_string(device->getDeviceProperties()->core.deviceId))
+                }),
+                hbox({
+                    text("Temp: ") | bold,
+                    text(std::to_string((int)temp) + "C") | color(Color::Yellow),
+                    text(" | Power: ") | bold,
+                    text(std::to_string((int)power) + "W") | color(Color::Red),
+                    text(" | Memory: ") | bold,
+                    text(format_bytes(mem.size - mem.free) + " / " + format_bytes(mem.size)) | color(Color::Green)
+                })
+            }),
+            // Memory bar
+            hbox({
+                text("Memory Usage: "),
+                gauge(1.0 - (double)mem.free / mem.size) | color(Color::Green),
+                text(" " + std::to_string((int)(100 * (1.0 - (double)mem.free / mem.size))) + "%")
+            }) | border,
+            // Engine bars
+            text("Engine Utilization:") | bold,
+            vbox(std::move(engine_bars)) | border,
+            // Process table
+            text("Processes:") | bold,
+            process_table_element | border,
+            // Quit hint
+            hbox({text("Press ESC to quit.")}) | center
+        }) | border;
+    }) | CatchEvent([&](Event event) {
+        if (event == Event::Escape) {
+            screen.Exit();
+            return true;
+        }
+        return false;
+    });
+
+    // Main event loop
+    screen.Loop(component);
 
     return 0;
 }
