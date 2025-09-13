@@ -33,6 +33,7 @@ set(SOURCES
     src/device.cpp
     src/power_domain.cpp
     src/psu.cpp
+    src/initializable.cpp
 )
 
 # Executable

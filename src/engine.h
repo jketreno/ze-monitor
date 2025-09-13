@@ -1,47 +1,38 @@
 #pragma once
 
-#include <cstring>              // for unique_ptr, allocator, make_unique
-#include <iostream>             // for cerr, cout
-#include <level_zero/ze_api.h>  // for _ze_result_t, ze_result_t, ZE_MAX_DE...
-#include <level_zero/zes_api.h> // for zes_device_handle_t, _zes_structure_...
-#include <memory>               // for unique_ptr, allocator, make_unique
-#include <stdexcept>            // for runtime_error
-#include <vector>               // for vector
+#include "initializable.h"
+#include <cstring>
+#include <level_zero/ze_api.h>
+#include <level_zero/zes_api.h>
 
-class Engine {
+class Engine : public Initializable {
 public:
-    Engine(zes_engine_handle_t handle) : engine(handle)
-    {
-        std::memset(&properties, 0, sizeof(properties));
-        properties.stype = ZES_STRUCTURE_TYPE_ENGINE_PROPERTIES;
-        std::memset(&stats, 0, sizeof(stats));
+  explicit Engine(zes_engine_handle_t handle)
+      : engine(handle), utilization(0.0) {
+    memset(&properties, 0, sizeof(properties));
+    properties.stype = ZES_STRUCTURE_TYPE_ENGINE_PROPERTIES;
+    memset(&stats, 0, sizeof(stats));
+    require_init(initializeEngine(), "engine");
+  }
 
-        if (!initializeEngine())
-        {
-            throw std::runtime_error("Failed to initialize engine.");
-        }
+  zes_engine_handle_t getHandle() const { return engine; }
+  double getEngineUtilization() {
+    ze_result_t ret = updateStats();
+    if (ret != ZE_RESULT_SUCCESS) {
+      return 0;
     }
+    return utilization;
+  }
+  const zes_engine_properties_t *getEngineProperties() const {
+    return &properties;
+  }
 
-    zes_engine_handle_t getHandle() const { return engine; }
-    double getEngineUtilization()
-    {
-        ze_result_t ret = updateStats();
-        if (ret != ZE_RESULT_SUCCESS)
-        {
-            std::cerr << "Failed to get activity for engine." << std::endl;
-            return 0;
-        }
-        return utilization;
-    }
-    const zes_engine_properties_t *getEngineProperties() const { return &properties; }
+private:
+  zes_engine_handle_t engine;
+  zes_engine_stats_t stats;
+  zes_engine_properties_t properties;
+  double utilization;
 
-private:    
-    zes_engine_handle_t engine;
-    zes_engine_stats_t stats;
-    zes_engine_properties_t properties;
-    double utilization;
-
-    bool initializeEngine();
-    ze_result_t updateStats();
+  bool initializeEngine();
+  ze_result_t updateStats();
 };
-

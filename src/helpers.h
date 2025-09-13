@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <fmt/core.h>
@@ -19,27 +20,21 @@
 #include <unordered_map>
 #include <variant>
 
-typedef enum
-{
-    justify_left,
-    justify_middle,
-    justify_right
-} justify_dir_t;
+typedef enum { justify_left, justify_middle, justify_right } justify_dir_t;
 
-std::string fit_label(const std::string &label, uint32_t max_width, justify_dir_t justify);
+std::string fit_label(const std::string &label, uint32_t max_width,
+                      justify_dir_t justify);
 
-typedef struct
-{
-    uint32_t vendor;
-    uint32_t device;
+typedef struct {
+  uint32_t vendor;
+  uint32_t device;
 } pciid_t;
 
-typedef struct
-{
-    uint32_t domain;
-    uint32_t bus;
-    uint32_t device;
-    uint32_t function;
+typedef struct {
+  uint32_t domain;
+  uint32_t bus;
+  uint32_t device;
+  uint32_t function;
 } bdf_t;
 
 template <typename T> std::string to_binary_string(T value);
@@ -51,3 +46,9 @@ const char *engine_type_to_str(zes_engine_group_t type);
 const char *voltage_status_to_str(zes_psu_voltage_status_t type);
 std::string engine_flags_to_str(zes_engine_type_flags_t flags);
 pciid_t get_pci_id_for_render_node(const std::string &render_path);
+
+// Centralized error logging helper
+inline void log_ze_error(const char *msg, ze_result_t ret) {
+  std::cerr << msg << ": 0x" << std::hex << ret << " (" << ze_error_to_str(ret)
+            << ")" << std::endl;
+}
