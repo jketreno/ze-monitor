@@ -374,55 +374,14 @@ std::string ellipses(std::string str, int width, bool from_end) {
 }
 
 int main(int argc, char *argv[]) {
-  bool showInfo = false;
-  bool listDevices = true;
-  bool one_shot = false;
-  bool no_ansi = false;
-  std::string start_mode;
-  int wait_ms = 1100;
-  arg_search_t argSearch;
-
-  // Process command-line arguments
-  for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-
-    // Look for --device argument
-    if (arg == "--device" && i + 1 < argc) {
-      std::string device_arg = argv[i + 1];
-      argSearch = process_device_argument(device_arg);
-      if (argSearch.type == INVALID) {
-        std::cerr << "Invalid argument: " << arg << std::endl;
-        return -1;
-      }
-      i++; // Skip the device argument
-      listDevices = false;
-    } else if (arg == "--info") {
-      showInfo = true;
-    } else if (arg == "--one-shot") {
-      one_shot = true;
-    } else if (arg == "--mode" && i + 1 < argc) {
-      start_mode = argv[i + 1];
-      i++;
-    } else if (arg == "--no-ansi") {
-      no_ansi = true;
-    } else if (arg == "--wait-time" && i + 1 < argc) {
-      wait_ms = atoi(argv[i + 1]);
-      i++;
-    } else if (arg == "--list") {
-      listDevices = true;
-    } else if (arg == "--version") {
-      copyright();
-      version();
-      return 0;
-    } else if (arg == "--help") {
-      copyright();
-      usage();
-      return 0;
-    } else {
-      std::cerr << "Unknown argument: " << arg << std::endl;
-      return 1;
-    }
-  }
+  ParsedArgs parsed = parse_args(argc, argv);
+  bool showInfo = parsed.showInfo;
+  bool listDevices = parsed.listDevices;
+  bool one_shot = parsed.one_shot;
+  bool no_ansi = parsed.no_ansi;
+  std::string start_mode = parsed.start_mode;
+  int wait_ms = parsed.wait_ms;
+  arg_search_t argSearch = parsed.argSearch;
 
   if (zesInit(0) != ZE_RESULT_SUCCESS) {
     printf("Can't initialize the API\n");

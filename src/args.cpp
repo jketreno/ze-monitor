@@ -1,3 +1,55 @@
+
+#include "args.h"
+#include <cstdlib>
+#include <iostream>
+
+ParsedArgs parse_args(int argc, char *argv[]) {
+  ParsedArgs parsed;
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+
+    if (arg == "--device" && i + 1 < argc) {
+      std::string device_arg = argv[i + 1];
+      parsed.argSearch = process_device_argument(device_arg);
+      if (parsed.argSearch.type == INVALID) {
+        std::cerr << "Invalid argument: " << arg << std::endl;
+        exit(-1);
+      }
+      i++;
+      parsed.listDevices = false;
+    } else if (arg == "--info") {
+      parsed.showInfo = true;
+    } else if (arg == "--one-shot") {
+      parsed.one_shot = true;
+    } else if (arg == "--mode" && i + 1 < argc) {
+      parsed.start_mode = argv[i + 1];
+      i++;
+    } else if (arg == "--no-ansi") {
+      parsed.no_ansi = true;
+    } else if (arg == "--wait-time" && i + 1 < argc) {
+      parsed.wait_ms = atoi(argv[i + 1]);
+      i++;
+    } else if (arg == "--list") {
+      parsed.listDevices = true;
+    } else if (arg == "--version") {
+      extern void copyright();
+      extern void version();
+      copyright();
+      version();
+      exit(0);
+    } else if (arg == "--help") {
+      extern void copyright();
+      extern void usage();
+      copyright();
+      usage();
+      exit(0);
+    } else {
+      std::cerr << "Unknown argument: " << arg << std::endl;
+      exit(1);
+    }
+  }
+  return parsed;
+}
 #include "args.h"
 
 arg_search_t process_device_argument(const std::string &device_arg) {
