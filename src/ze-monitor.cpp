@@ -17,6 +17,7 @@ https://github.com/intel/compute-runtime/tree/master/programmers-guide
 #include "process.h"     // for ze_error_to_str, engine_type_to_str
 #include "temperature.h" // for ze_error_to_str, engine_type_to_str
 #include <chrono>
+#include <clocale>
 #include <cmath>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -24,9 +25,426 @@ https://github.com/intel/compute-runtime/tree/master/programmers-guide
 #include <ftxui/dom/node.hpp>
 #include <ftxui/screen/color.hpp>
 #include <iomanip>
+#include <regex>
 #include <sstream>
 #include <thread>
+#include <unistd.h>
 using namespace ftxui;
+
+enum class ViewMode { OVERVIEW, ENGINES, PROCESSES, POWER, THERMAL };
+
+struct UIState {
+  ViewMode view_mode = ViewMode::OVERVIEW;
+  int process_offset = 0;
+  int engine_offset = 0;
+  int thermal_offset = 0;
+  int power_offset = 0;
+  bool show_help = false;
+  std::chrono::steady_clock::time_point refresh_time =
+      std::chrono::steady_clock::now();
+};
+
+// Forward declarations for helper functions used by build_ui.
+std::string format_bytes(uint64_t bytes);
+Color get_percentage_color(double percentage);
+Color get_temp_color(double temp);
+std::string ellipses(std::string str, int width, bool from_end = false);
+
+// Build the FTXUI element for the main UI. This is reused for interactive
+// rendering and offscreen (non-tty) rendering.
+Element build_ui(Device *device, UIState &state, int screen_width,
+                 int screen_height) {
+  // Auto refresh: update temperatures and processes if a second passed.
+  auto now = std::chrono::steady_clock::now();
+  if (now - state.refresh_time > std::chrono::seconds(1)) {
+    state.refresh_time = now;
+    device->updateTemperatures();
+    device->updateProcesses();
+  }
+
+  Elements main_content;
+
+  // Header with device info
+  auto mem = device->getMemoryState();
+  double mem_usage_pct = 0.0;
+  if (mem.size > 0) {
+    mem_usage_pct = (1.0 - (double)mem.free / mem.size) * 100;
+  }
+  auto avg_temp = 0.0;
+  if (device->getTemperatureCount() > 0) {
+    for (uint32_t i = 0; i < device->getTemperatureCount(); ++i) {
+      avg_temp += device->getTemperature(i);
+    }
+    avg_temp /= device->getTemperatureCount();
+  }
+
+  auto header =
+      vbox({hbox({text("🚀 ") | color(Color::Cyan),
+                  text("ZE-MONITOR") | bold | color(Color::White),
+                  text(" | ") | color(Color::GrayDark),
+                  text(device->getDeviceProperties()->modelName) |
+                      color(Color::Cyan),
+                  text(" | ") | color(Color::GrayDark),
+                  text("View: ") | color(Color::GrayDark),
+                  text([&]() {
+                    switch (state.view_mode) {
+                    case ViewMode::OVERVIEW:
+                      return "Overview";
+                    case ViewMode::ENGINES:
+                      return "Engines";
+                    case ViewMode::PROCESSES:
+                      return "Processes";
+                    case ViewMode::POWER:
+                      return "Power";
+                    case ViewMode::THERMAL:
+                      return "Thermal";
+                    }
+                    return "Unknown";
+                  }()) |
+                      bold | color(Color::Yellow)}),
+            hbox({notflex(text("Memory: ") | color(Color::White)),
+                  mem.size > 0
+                      ? xflex_grow(gauge(mem_usage_pct / 100.0) |
+                                   color(get_percentage_color(mem_usage_pct)))
+                      : text("N/A"),
+                  mem.size > 0
+                      ? notflex(text(" " + std::to_string((int)mem_usage_pct) +
+                                     "%") |
+                                size(WIDTH, EQUAL, 5) |
+                                color(get_percentage_color(mem_usage_pct)))
+                      : text(""),
+                  mem.size > 0
+                      ? notflex(text("(" + format_bytes(mem.size - mem.free) +
+                                     "/" + format_bytes(mem.size) + ")") |
+                                color(Color::GrayDark))
+                      : text(""),
+                  separator(), text(" Temp: ") | color(Color::White),
+                  text(std::to_string((int)avg_temp) + "°C") |
+                      color(get_temp_color(avg_temp))})}) |
+      size(HEIGHT, GREATER_THAN, 2) | border | color(Color::Cyan) | notflex;
+
+  main_content.push_back(header | notflex);
+
+  switch (state.view_mode) {
+  case ViewMode::OVERVIEW: {
+    // Engine utilization overview
+    Elements engine_rows;
+    engine_rows.push_back(
+        hbox({text("ENGINE") | bold | size(WIDTH, EQUAL, 30), separator(),
+              text("UTILIZATION") | bold | flex, separator(),
+              text("SUB-DEV") | bold | size(WIDTH, EQUAL, 10)}) |
+        color(Color::White));
+
+    // Only show aggregate engines (names ending with ALL)
+    std::regex all_re("ALL$");
+    for (uint32_t i = 0; i < device->getEngineCount(); ++i) {
+      auto engine = device->getEngine(i);
+      std::string name = engine_type_to_str(engine->getEngineProperties()->type);
+      if (!std::regex_search(name, all_re))
+  continue;
+      double util = engine->getEngineUtilization();
+      auto subdev =
+    engine->getEngineProperties()->onSubdevice
+        ? std::to_string(engine->getEngineProperties()->subdeviceId)
+        : "N/A";
+
+      engine_rows.push_back(hbox(
+    {notflex(text(ellipses(name, 30, true)) |
+       size(WIDTH, EQUAL, 30) | color(Color::Cyan)),
+     separator(),
+     xflex_grow(gauge(util / 100.0) | color(get_percentage_color(util))),
+     notflex(text(" " + std::to_string((int)util) + "%") |
+       size(WIDTH, EQUAL, 5) | color(get_percentage_color(util))),
+     separator(),
+     notflex(text(subdev) | size(WIDTH, EQUAL, 10) |
+       color(Color::GrayDark))}));
+    }
+
+    main_content.push_back(
+        vbox({text("🔧 Engine Utilization") | bold | color(Color::Green),
+              vbox(std::move(engine_rows))}) |
+        border);
+
+    // Process summary: total processes, total memory used, top 3 by memory
+    uint32_t proc_count = device->getProcessCount();
+    uint64_t total_proc_mem = 0;
+    std::vector<std::pair<uint64_t, std::string>> proc_mem_list;
+    for (uint32_t i = 0; i < proc_count; ++i) {
+      auto proc = device->getProcessInfo(i);
+      auto ps = proc->getProcessState();
+      total_proc_mem += ps->memSize;
+      proc_mem_list.emplace_back(ps->memSize, proc->getCommandLine());
+    }
+    std::sort(proc_mem_list.begin(), proc_mem_list.end(),
+              [](auto &a, auto &b) { return a.first > b.first; });
+
+    Elements summary_rows;
+    summary_rows.push_back(text("Processes: ") | color(Color::White) |
+                           bold);
+    summary_rows.push_back(text(" Count: " + std::to_string(proc_count)) |
+                           color(Color::Yellow));
+    summary_rows.push_back(text(" Total GPU Memory: " +
+                               format_bytes(total_proc_mem)) |
+                           color(Color::Cyan));
+
+    int top_n = std::min((size_t)3, proc_mem_list.size());
+    for (int i = 0; i < top_n; ++i) {
+      summary_rows.push_back(text(" Top " + std::to_string(i + 1) + ": ") |
+                             color(Color::GrayDark) |
+                             size(WIDTH, LESS_THAN, 60));
+      summary_rows.push_back(text(ellipses(proc_mem_list[i].second, 60)) |
+                             color(Color::White));
+      summary_rows.push_back(text(format_bytes(proc_mem_list[i].first)) |
+                             color(Color::Yellow));
+    }
+
+    main_content.push_back(
+        vbox({text("📊 Process Summary") | bold | color(Color::Green),
+              hbox({vbox(std::move(summary_rows))})}) |
+        border);
+    break;
+  }
+
+  case ViewMode::ENGINES: {
+    Elements engine_detail;
+    engine_detail.push_back(
+        hbox({text("ENGINE") | bold | size(WIDTH, EQUAL, 15), separator(),
+              text("UTILIZATION") | bold | flex, separator(),
+              text("SUB-DEVICE") | bold | size(WIDTH, EQUAL, 15), separator(),
+              text("STATUS") | bold | size(WIDTH, EQUAL, 15)}) |
+        color(Color::White));
+
+    int visible_engines = 15;
+    int start = state.engine_offset;
+    int end = std::min(start + visible_engines, (int)device->getEngineCount());
+
+    for (int i = start; i < end; ++i) {
+      auto engine = device->getEngine(i);
+      double util = engine->getEngineUtilization();
+      auto status = util > 0 ? "ACTIVE" : "IDLE";
+      auto status_color = util > 0 ? Color::Green : Color::GrayDark;
+
+      engine_detail.push_back(hbox(
+          {notflex(
+               text(engine_type_to_str(engine->getEngineProperties()->type)) |
+               size(WIDTH, EQUAL, 15) | color(Color::Cyan)),
+           separator(),
+           xflex_grow(gauge(util / 100.0) | color(get_percentage_color(util))),
+           notflex(text(" " + std::to_string((int)util) + "%") |
+                   size(WIDTH, EQUAL, 5) | color(get_percentage_color(util))),
+           separator(),
+           notflex(text(engine->getEngineProperties()->onSubdevice
+                            ? std::to_string(
+                                  engine->getEngineProperties()->subdeviceId)
+                            : "N/A") |
+                   size(WIDTH, EQUAL, 15) | color(Color::GrayDark)),
+           separator(),
+           notflex(text(status) | size(WIDTH, EQUAL, 15) |
+                   color(status_color))}));
+    }
+
+    main_content.push_back(
+        vbox({text("🔧 Engine Details") | bold | color(Color::Green),
+              vbox(std::move(engine_detail))}) |
+        border);
+    break;
+  }
+
+  case ViewMode::PROCESSES: {
+    Elements process_detail;
+    process_detail.push_back(
+        hbox({notflex(text("PID") | bold | size(WIDTH, EQUAL, 8)), separator(),
+              notflex(text("COMMAND") | bold | size(WIDTH, EQUAL, 30)),
+              separator(),
+              notflex(text("MEMORY") | bold | size(WIDTH, EQUAL, 12)),
+              separator(),
+              notflex(text("SHARED") | bold | size(WIDTH, EQUAL, 12)),
+              separator(),
+              notflex(text("ENGINES") | bold | size(WIDTH, EQUAL, 15))}) |
+        color(Color::White));
+
+    int visible_processes = 15;
+    int start = state.process_offset;
+    int end =
+        std::min(start + visible_processes, (int)device->getProcessCount());
+
+    for (int i = start; i < end; ++i) {
+      auto proc = device->getProcessInfo(i);
+      auto mem_pct = mem.size > 0 ? (double)proc->getProcessState()->memSize /
+                                        mem.size * 100
+                                  : 0.0;
+
+      process_detail.push_back(hbox(
+          {notflex(text(std::to_string(proc->getProcessState()->processId)) |
+                   size(WIDTH, EQUAL, 8) | color(Color::Yellow)),
+           separator(),
+           notflex(text(proc->getCommandLine()) | size(WIDTH, EQUAL, 30) |
+                   color(Color::White)),
+           separator(),
+           notflex(text(format_bytes(proc->getProcessState()->memSize)) |
+                   size(WIDTH, EQUAL, 12) |
+                   color(get_percentage_color(mem_pct))),
+           separator(),
+           notflex(text(format_bytes(proc->getProcessState()->sharedSize)) |
+                   size(WIDTH, EQUAL, 12) | color(Color::GrayDark)),
+           separator(),
+           notflex(text(engine_flags_to_str(proc->getProcessState()->engines)) |
+                   size(WIDTH, EQUAL, 15) | color(Color::Cyan))}));
+    }
+
+    main_content.push_back(
+        vbox({text("📊 Process Details") | bold | color(Color::Green),
+              vbox(std::move(process_detail))}) |
+        border);
+    break;
+  }
+
+  case ViewMode::THERMAL: {
+    Elements thermal_detail;
+    thermal_detail.push_back(
+        hbox({text("SENSOR") | bold | size(WIDTH, LESS_THAN, 15), text(" "),
+              text("TEMPERATURE") | bold | size(WIDTH, LESS_THAN, 20),
+              text(" "), text("STATUS") | bold | size(WIDTH, LESS_THAN, 15),
+              text(" "), text("GRAPH") | bold | size(WIDTH, LESS_THAN, 30)}) |
+        color(Color::White));
+
+    for (uint32_t i = 0; i < device->getTemperatureCount(); ++i) {
+      auto temp = device->getTemperature(i);
+      auto status = temp < 80 ? "NORMAL" : temp < 90 ? "WARM" : "HOT";
+      auto status_color = temp < 80   ? Color::Green
+                          : temp < 90 ? Color::Yellow
+                                      : Color::Red;
+
+      double temp_ratio = std::min(temp / 100.0, 1.0);
+
+      thermal_detail.push_back(
+          hbox({text("Sensor " + std::to_string(i + 1)) |
+                    size(WIDTH, LESS_THAN, 15) | color(Color::Cyan),
+                separator(),
+                text(std::to_string((int)temp) + "°C") |
+                    size(WIDTH, LESS_THAN, 20) | color(get_temp_color(temp)),
+                separator(),
+                text(status) | size(WIDTH, LESS_THAN, 15) | color(status_color),
+                separator(),
+                xflex_grow(gauge(temp_ratio) | color(get_temp_color(temp)))}));
+    }
+
+    main_content.push_back(
+        vbox({text("🌡️  Thermal Monitoring") | bold | color(Color::Green),
+              vbox(std::move(thermal_detail))}) |
+        border);
+    break;
+  }
+
+  case ViewMode::POWER: {
+    Elements power_detail;
+    power_detail.push_back(
+        hbox({text("DOMAIN") | bold | size(WIDTH, EQUAL, 9), separator(),
+              text("POWER") | bold | size(WIDTH, EQUAL, 5), separator(),
+              text("ENERGY") | bold | size(WIDTH, EQUAL, 6), separator(),
+              text("CONTROL") | bold | size(WIDTH, EQUAL, 7), separator(),
+              text("SUB-DEV") | bold | size(WIDTH, EQUAL, 10)}) |
+        color(Color::White));
+
+    for (uint32_t i = 0; i < device->getPowerDomainCount(); ++i) {
+      auto power_domain = device->getPowerDomain(i);
+      auto properties = power_domain->getPowerDomainProperties();
+      auto energy = power_domain->getPowerDomainEnergy();
+
+      power_detail.push_back(hbox(
+          {text("Domain " + std::to_string(i + 1)) | size(WIDTH, EQUAL, 9) |
+               color(Color::Cyan),
+           separator(),
+           text(energy >= 0 ? (std::to_string((int)energy) + "W") : "N/A") |
+               size(WIDTH, EQUAL, 5) | color(Color::Yellow),
+           separator(),
+           text("N/A") | size(WIDTH, EQUAL, 6) | color(Color::GrayDark),
+           separator(),
+           text(properties->canControl ? "YES" : "NO") | size(WIDTH, EQUAL, 7) |
+               color(properties->canControl ? Color::Green : Color::Red),
+           separator(),
+           text(properties->onSubdevice
+                    ? std::to_string(properties->subdeviceId)
+                    : "N/A") |
+               size(WIDTH, EQUAL, 10) | color(Color::GrayDark)}));
+    }
+
+    if (device->getPSUCount() > 0) {
+      power_detail.push_back(separator());
+      power_detail.push_back(text("Power Supply Units:") | bold |
+                             color(Color::White));
+
+      for (uint32_t i = 0; i < device->getPSUCount(); ++i) {
+        auto psu = device->getPSU(i);
+        auto properties = psu->getPSUProperties();
+
+        power_detail.push_back(hbox(
+            {text("PSU " + std::to_string(i + 1)) | size(WIDTH, LESS_THAN, 15) |
+                 color(Color::Cyan),
+             text("Fan: " + std::string(properties->haveFan ? "YES" : "NO")) |
+                 size(WIDTH, LESS_THAN, 15) |
+                 color(properties->haveFan ? Color::Green : Color::Red),
+             text("Limit: " + std::to_string(properties->ampLimit) + "A") |
+                 size(WIDTH, LESS_THAN, 15) | color(Color::Yellow),
+             text("") | size(WIDTH, LESS_THAN, 10),
+             text(properties->onSubdevice
+                      ? std::to_string(properties->subdeviceId)
+                      : "N/A") |
+                 size(WIDTH, LESS_THAN, 10) | color(Color::GrayDark)}));
+      }
+    }
+
+    main_content.push_back(
+        vbox({text("⚡ Power Management") | bold | color(Color::Green),
+              vbox(std::move(power_detail))}) |
+        border);
+    break;
+  }
+  }
+
+  // Key hints
+  Elements key_hints;
+  if (state.show_help) {
+    key_hints = {
+        text("📋 Key Bindings:") | bold | color(Color::White),
+        hbox({text("1-5") | color(Color::Yellow),
+              text(": Switch views  ") | color(Color::GrayDark),
+              text("↑↓") | color(Color::Yellow),
+              text(": Scroll  ") | color(Color::GrayDark),
+              text("h") | color(Color::Yellow),
+              text(": Toggle help  ") | color(Color::GrayDark),
+              text("q/ESC") | color(Color::Yellow),
+              text(": Quit") | color(Color::GrayDark)}),
+        text("Views: 1=Overview 2=Engines 3=Processes 4=Power 5=Thermal") |
+            color(Color::GrayDark)};
+  } else {
+    key_hints = {hbox({text("Views: ") | color(Color::GrayDark),
+                       text("1") | color(Color::Yellow),
+                       text("=Overview ") | color(Color::GrayDark),
+                       text("2") | color(Color::Yellow),
+                       text("=Engines ") | color(Color::GrayDark),
+                       text("3") | color(Color::Yellow),
+                       text("=Processes ") | color(Color::GrayDark),
+                       text("4") | color(Color::Yellow),
+                       text("=Power ") | color(Color::GrayDark),
+                       text("5") | color(Color::Yellow),
+                       text("=Thermal ") | color(Color::GrayDark),
+                       text("| ") | color(Color::GrayDark),
+                       text("↑↓") | color(Color::Yellow),
+                       text("=Scroll ") | color(Color::GrayDark),
+                       text("h") | color(Color::Yellow),
+                       text("=Help ") | color(Color::GrayDark),
+                       text("q") | color(Color::Yellow),
+                       text("=Quit") | color(Color::GrayDark)})};
+  }
+
+  main_content.push_back(notflex(vbox(std::move(key_hints))) |
+                         size(HEIGHT, EQUAL, state.show_help ? 3 : 1) |
+                         notflex | border | color(Color::Blue));
+
+  Element root = vbox(std::move(main_content));
+  return root;
+}
 
 // Helper to format bytes
 std::string format_bytes(uint64_t bytes) {
@@ -371,6 +789,9 @@ void usage() {
       {"device ID",
        "Device ID to query. Can accept #, BDF, PCI-ID, /dev/dri/*."},
       {"help", "This text."},
+      {"no-ansi", "Disable ANSI/colors and force unicode box output."},
+      {"wait-time <ms>",
+       "Wait time in milliseconds for sensor polling (default 1100)."},
       {"info", "Show additional details about device."},
       {"version", "Version info."},
       {nullptr, nullptr}};
@@ -385,7 +806,7 @@ void usage() {
   printf("\n");
 }
 
-std::string ellipses(std::string str, int width, bool from_end = false) {
+std::string ellipses(std::string str, int width, bool from_end) {
   if ((int)str.length() <= width) {
     return str;
   }
@@ -402,6 +823,8 @@ int main(int argc, char *argv[]) {
   bool showInfo = false;
   bool listDevices = true;
   bool one_shot = false;
+  bool no_ansi = false;
+  int wait_ms = 1100;
   arg_search_t argSearch;
 
   // Process command-line arguments
@@ -422,6 +845,11 @@ int main(int argc, char *argv[]) {
       showInfo = true;
     } else if (arg == "--one-shot") {
       one_shot = true;
+    } else if (arg == "--no-ansi") {
+      no_ansi = true;
+    } else if (arg == "--wait-time" && i + 1 < argc) {
+      wait_ms = atoi(argv[i + 1]);
+      i++;
     } else if (arg == "--list") {
       listDevices = true;
     } else if (arg == "--version") {
@@ -497,23 +925,102 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
+  // If stdout isn't a terminal, render the FTXUI layout into an offscreen
+  // Screen sized to 80xN (unicode box-drawing characters, no ANSI/color
+  // escapes) so the output can be piped to less/files etc.
+  UIState state;
+  if (!isatty(fileno(stdout)) || no_ansi) {
+    // Ensure UTF-8 locale so box-drawing characters render correctly
+    setlocale(LC_ALL, "");
+
+    if (device == nullptr) {
+      list_devices(devices);
+      return 0;
+    }
+
+    const int width = 80;
+
+    // First update sensors/processes, then wait one polling cycle so
+    // sysman can populate values (temperatures, processes, etc.).
+    device->updateTemperatures();
+    device->updateProcesses();
+    std::this_thread::sleep_for(std::chrono::milliseconds(wait_ms));
+    device->updateTemperatures();
+    device->updateProcesses();
+
+    // Render to a very tall offscreen Screen, then trim trailing empty
+    // rows to compute the exact height to print.
+    const int max_height = 2000;
+    Element root = build_ui(device, state, width, max_height);
+    try {
+      ftxui::Screen screen(width, max_height);
+      Render(screen, root);
+      std::string out = screen.ToString();
+
+      // Split into lines and drop trailing lines that are all spaces
+      std::vector<std::string> lines;
+      size_t pos = 0;
+      while (pos < out.size()) {
+        size_t nl = out.find('\n', pos);
+        if (nl == std::string::npos) {
+          lines.push_back(out.substr(pos));
+          break;
+        }
+        lines.push_back(out.substr(pos, nl - pos));
+        pos = nl + 1;
+      }
+
+      while (!lines.empty()) {
+        const std::string &last = lines.back();
+        bool all_space = true;
+        for (char c : last) {
+          if (c != ' ' && c != '\t' && c != '\r') {
+            all_space = false;
+            break;
+          }
+        }
+        if (all_space)
+          lines.pop_back();
+        else
+          break;
+      }
+
+      // Reconstruct output
+      std::string trimmed;
+      for (size_t i = 0; i < lines.size(); ++i) {
+        trimmed += lines[i];
+        trimmed.push_back('\n');
+      }
+
+      if (!trimmed.empty()) {
+        // If user requested no-ansi, strip ANSI escape sequences that may
+        // still be emitted by decorators. Use a regex to remove \x1B[...m
+        if (no_ansi) {
+          static const std::regex ansi_re("\x1B\\[[0-9;]*[A-Za-z]");
+          std::string stripped = std::regex_replace(trimmed, ansi_re, "");
+          fwrite(stripped.c_str(), 1, stripped.size(), stdout);
+        } else {
+          fwrite(trimmed.c_str(), 1, trimmed.size(), stdout);
+        }
+        fflush(stdout);
+      }
+    } catch (...) {
+      // Fallback to simple textual output if rendering fails
+      show_device_properties(device);
+      show_device_memory(device);
+      for (uint32_t i = 0; i < device->getEngineCount(); ++i) {
+        auto engine = device->getEngine(i);
+        double util = engine->getEngineUtilization();
+        printf("Engine %u: %.0f%%\n", i, util);
+      }
+    }
+
+    return 0;
+  }
+
   // FTXUI main UI loop
   auto screen = ScreenInteractive::Fullscreen();
 
-  enum class ViewMode { OVERVIEW, ENGINES, PROCESSES, POWER, THERMAL };
-
-  struct UIState {
-    ViewMode view_mode = ViewMode::OVERVIEW;
-    int process_offset = 0;
-    int engine_offset = 0;
-    int thermal_offset = 0;
-    int power_offset = 0;
-    bool show_help = false;
-    std::chrono::steady_clock::time_point refresh_time =
-        std::chrono::steady_clock::now();
-  };
-
-  UIState state;
   // Buffer holding the final rendered screen to print on exit
   std::string final_frame_buffer;
   // Keep the last rendered Element so we can render it to a Screen on exit
@@ -1105,6 +1612,7 @@ int main(int argc, char *argv[]) {
                   std::string s = screen.ToString();
                   if (!s.empty()) {
                     fwrite(s.c_str(), 1, s.size(), stdout);
+                    fprintf(stdout, "\n");
                     fflush(stdout);
                     printed = true;
                   }
@@ -1115,6 +1623,7 @@ int main(int argc, char *argv[]) {
                   std::string out = active->ToString();
                   if (!out.empty()) {
                     fwrite(out.c_str(), 1, out.size(), stdout);
+                    fprintf(stdout, "\n");
                     fflush(stdout);
                   }
                 }

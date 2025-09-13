@@ -3,7 +3,7 @@ set -o pipefail
 build() {
     echo "Building $(date)"
     cd build
-    if cmake && make && cpack; then
+    if cmake .. && make -j $(nproc) && cpack; then
         echo "Build successful"
     else
         echo "Build failed"
