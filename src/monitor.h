@@ -13,6 +13,7 @@ struct MonitorConfig {
     int wait_ms;
     bool no_ansi;
     std::string start_mode;
+    bool one_shot = false;
 };
 
 // Run the main monitoring loop (TTY or non-TTY)

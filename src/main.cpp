@@ -121,6 +121,7 @@ int main(int argc, char *argv[]) {
 
   // Monitoring loop and UI
   UIState state;
-  MonitorConfig config{device, &state, wait_ms, no_ansi, start_mode};
+  MonitorConfig config{device,  &state,     wait_ms,
+                       no_ansi, start_mode, parsed.one_shot};
   return run_monitor(config);
 }
