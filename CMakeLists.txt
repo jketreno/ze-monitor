@@ -24,7 +24,7 @@ message(STATUS "APP_VERSION    : ${FULL_VERSION}")
 
 # Source files
 set(SOURCES
-    src/ze-monitor.cpp
+    src/main.cpp
     src/helpers.cpp
     src/args.cpp
     src/engine.cpp
@@ -35,6 +35,8 @@ set(SOURCES
     src/psu.cpp
     src/initializable.cpp
     src/ui.cpp
+    src/device_helpers.cpp
+    src/monitor.cpp
 )
 
 # Executable

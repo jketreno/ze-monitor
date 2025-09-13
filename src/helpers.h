@@ -1,3 +1,6 @@
+#include <string>
+
+std::string ellipses(std::string str, int width, bool from_end);
 
 #pragma once
 

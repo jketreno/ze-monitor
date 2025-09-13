@@ -1,3 +1,17 @@
+#include <string>
+
+std::string ellipses(std::string str, int width, bool from_end) {
+  if ((int)str.length() <= width) {
+    return str;
+  }
+  if (width <= 3) {
+    return str.substr(0, width);
+  }
+  if (from_end) {
+    return "..." + str.substr(str.length() - (width - 3));
+  }
+  return str.substr(0, width - 3) + "...";
+}
 #include <iostream>
 
 // Centralized error logging helper implementation (header-only inline)

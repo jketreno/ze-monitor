@@ -1,8 +1,284 @@
+
 #include "ui.h"
+#include "device.h"
 
 ftxui::Element build_ui(Device *device, UIState &state, int screen_width, int screen_height, bool no_ansi) {
-  (void)device; (void)state; (void)screen_width; (void)screen_height; (void)no_ansi;
-  return ftxui::text("UI not yet implemented");
+  (void)screen_height;
+  // Auto refresh: update temperatures and processes if a second passed.
+  auto now = std::chrono::steady_clock::now();
+  if (now - state.refresh_time > std::chrono::seconds(1)) {
+    state.refresh_time = now;
+    device->updateTemperatures();
+    device->updateProcesses();
+  }
+
+  ftxui::Elements main_content;
+
+  // Header with device info
+  auto mem = device->getMemoryState();
+  double mem_usage_pct = 0.0;
+  if (mem.size > 0) {
+    mem_usage_pct = (1.0 - (double)mem.free / mem.size) * 100;
+  }
+  auto avg_temp = 0.0;
+  if (device->getTemperatureCount() > 0) {
+    for (uint32_t i = 0; i < device->getTemperatureCount(); ++i) {
+      avg_temp += device->getTemperature(i);
+    }
+    avg_temp /= device->getTemperatureCount();
+  }
+
+  auto header =
+      ftxui::vbox(
+          {ftxui::hbox(
+               {ftxui::text("🚀 ") | ftxui::color(ftxui::Color::Cyan),
+                ftxui::text("ZE-MONITOR") | ftxui::bold |
+                    ftxui::color(ftxui::Color::White),
+                ftxui::text(" | ") | ftxui::color(ftxui::Color::GrayDark),
+                ftxui::text(device->getDeviceProperties()->modelName) |
+                    ftxui::color(ftxui::Color::Cyan),
+                ftxui::text(" | ") | ftxui::color(ftxui::Color::GrayDark),
+                ftxui::text("View: ") | ftxui::color(ftxui::Color::GrayDark),
+                ftxui::text([&]() {
+                  switch (state.view_mode) {
+                  case ViewMode::OVERVIEW:
+                    return "Overview";
+                  case ViewMode::ENGINES:
+                    return "Engines";
+                  case ViewMode::PROCESSES:
+                    return "Processes";
+                  case ViewMode::POWER:
+                    return "Power";
+                  case ViewMode::THERMAL:
+                    return "Thermal";
+                  }
+                  return "Unknown";
+                }()) |
+                    ftxui::bold | ftxui::color(ftxui::Color::Yellow)}),
+           ftxui::hbox(
+               {ftxui::notflex(ftxui::text("Memory: ") |
+                               ftxui::color(ftxui::Color::White)),
+                mem.size > 0
+                    ? ftxui::xflex_grow(
+                          ftxui::gauge(mem_usage_pct / 100.0) |
+                          ftxui::color(get_percentage_color(mem_usage_pct)))
+                    : ftxui::text("N/A"),
+                mem.size > 0
+                    ? ftxui::notflex(
+                          ftxui::text(" " + std::to_string((int)mem_usage_pct) +
+                                      "%") |
+                          ftxui::size(ftxui::WIDTH, ftxui::EQUAL, 5) |
+                          ftxui::color(get_percentage_color(mem_usage_pct)))
+                    : ftxui::text(""),
+                mem.size > 0
+                    ? ftxui::notflex(
+                          ftxui::text("(" + format_bytes(mem.size - mem.free) +
+                                      "/" + format_bytes(mem.size) + ")") |
+                          ftxui::color(ftxui::Color::GrayDark))
+                    : ftxui::text(""),
+                ftxui::separator(),
+                ftxui::text(" Temp: ") | ftxui::color(ftxui::Color::White),
+                ftxui::text(std::to_string((int)avg_temp) + "°C") |
+                    ftxui::color(get_temp_color(avg_temp))})}) |
+      ftxui::size(ftxui::HEIGHT, ftxui::GREATER_THAN, 2) | ftxui::border |
+      ftxui::color(ftxui::Color::Cyan) | ftxui::notflex;
+
+  main_content.push_back(header | ftxui::notflex);
+
+  switch (state.view_mode) {
+  case ViewMode::OVERVIEW: {
+    main_content.push_back(build_engine_details(
+        device, state, screen_width, 15, "ALL$", "🔧 Engine Utilization"));
+    main_content.push_back(
+        build_process_details(device, state, screen_width, 15, true, 3));
+    break;
+  }
+  case ViewMode::ENGINES: {
+    main_content.push_back(
+        build_engine_details(device, state, screen_width, 15));
+    break;
+  }
+  case ViewMode::PROCESSES: {
+    main_content.push_back(
+        build_process_details(device, state, screen_width, 15));
+    break;
+  }
+  case ViewMode::THERMAL: {
+    ftxui::Elements thermal_detail;
+    thermal_detail.push_back(
+        ftxui::hbox({ftxui::text("SENSOR") | ftxui::bold |
+                         ftxui::size(ftxui::WIDTH, ftxui::LESS_THAN, 15),
+                     ftxui::text(" "),
+                     ftxui::text("TEMPERATURE") | ftxui::bold |
+                         ftxui::size(ftxui::WIDTH, ftxui::LESS_THAN, 20),
+                     ftxui::text(" "),
+                     ftxui::text("STATUS") | ftxui::bold |
+                         ftxui::size(ftxui::WIDTH, ftxui::LESS_THAN, 15),
+                     ftxui::text(" "),
+                     ftxui::text("GRAPH") | ftxui::bold |
+                         ftxui::size(ftxui::WIDTH, ftxui::LESS_THAN, 30)}) |
+        ftxui::color(ftxui::Color::White));
+    for (uint32_t i = 0; i < device->getTemperatureCount(); ++i) {
+      auto temp = device->getTemperature(i);
+      auto status = temp < 80 ? "NORMAL" : temp < 90 ? "WARM" : "HOT";
+      auto status_color = temp < 80   ? ftxui::Color::Green
+                          : temp < 90 ? ftxui::Color::Yellow
+                                      : ftxui::Color::Red;
+      double temp_ratio = std::min(temp / 100.0, 1.0);
+      thermal_detail.push_back(
+          ftxui::hbox({ftxui::text("Sensor " + std::to_string(i + 1)) |
+                           ftxui::size(ftxui::WIDTH, ftxui::LESS_THAN, 15) |
+                           ftxui::color(ftxui::Color::Cyan),
+                       ftxui::separator(),
+                       ftxui::text(std::to_string((int)temp) + "°C") |
+                           ftxui::size(ftxui::WIDTH, ftxui::LESS_THAN, 20) |
+                           ftxui::color(get_temp_color(temp)),
+                       ftxui::separator(),
+                       ftxui::text(status) |
+                           ftxui::size(ftxui::WIDTH, ftxui::LESS_THAN, 15) |
+                           ftxui::color(status_color),
+                       ftxui::separator(),
+                       ftxui::xflex_grow(ftxui::gauge(temp_ratio) |
+                                         ftxui::color(get_temp_color(temp)))}));
+    }
+    main_content.push_back(
+        ftxui::vbox({ftxui::text("🌡️  Thermal Monitoring") | ftxui::bold |
+                         ftxui::color(ftxui::Color::Green),
+                     ftxui::vbox(std::move(thermal_detail))}) |
+        ftxui::border);
+    break;
+  }
+  case ViewMode::POWER: {
+    ftxui::Elements power_detail;
+    power_detail.push_back(
+        ftxui::hbox({ftxui::text("DOMAIN") | ftxui::bold |
+                         ftxui::size(ftxui::WIDTH, ftxui::EQUAL, 9),
+                     ftxui::separator(),
+                     ftxui::text("POWER") | ftxui::bold |
+                         ftxui::size(ftxui::WIDTH, ftxui::EQUAL, 5),
+                     ftxui::separator(),
+                     ftxui::text("ENERGY") | ftxui::bold |
+                         ftxui::size(ftxui::WIDTH, ftxui::EQUAL, 6),
+                     ftxui::separator(),
+                     ftxui::text("CONTROL") | ftxui::bold |
+                         ftxui::size(ftxui::WIDTH, ftxui::EQUAL, 7),
+                     ftxui::separator(),
+                     ftxui::text("SUB-DEV") | ftxui::bold |
+                         ftxui::size(ftxui::WIDTH, ftxui::EQUAL, 10)}) |
+        ftxui::color(ftxui::Color::White));
+    for (uint32_t i = 0; i < device->getPowerDomainCount(); ++i) {
+      auto power_domain = device->getPowerDomain(i);
+      auto properties = power_domain->getPowerDomainProperties();
+      auto energy = power_domain->getPowerDomainEnergy();
+      power_detail.push_back(ftxui::hbox(
+          {ftxui::text("Domain " + std::to_string(i + 1)) |
+               ftxui::size(ftxui::WIDTH, ftxui::EQUAL, 9) |
+               ftxui::color(ftxui::Color::Cyan),
+           ftxui::separator(),
+           ftxui::text(energy >= 0 ? (std::to_string((int)energy) + "W")
+                                   : "N/A") |
+               ftxui::size(ftxui::WIDTH, ftxui::EQUAL, 5) |
+               ftxui::color(ftxui::Color::Yellow),
+           ftxui::separator(),
+           ftxui::text("N/A") | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, 6) |
+               ftxui::color(ftxui::Color::GrayDark),
+           ftxui::separator(),
+           ftxui::text(properties->canControl ? "YES" : "NO") |
+               ftxui::size(ftxui::WIDTH, ftxui::EQUAL, 7) |
+               ftxui::color(properties->canControl ? ftxui::Color::Green
+                                                   : ftxui::Color::Red),
+           ftxui::separator(),
+           ftxui::text(properties->onSubdevice
+                           ? std::to_string(properties->subdeviceId)
+                           : "N/A") |
+               ftxui::size(ftxui::WIDTH, ftxui::EQUAL, 10) |
+               ftxui::color(ftxui::Color::GrayDark)}));
+    }
+    if (device->getPSUCount() > 0) {
+      power_detail.push_back(ftxui::separator());
+      power_detail.push_back(ftxui::text("Power Supply Units:") | ftxui::bold |
+                             ftxui::color(ftxui::Color::White));
+      for (uint32_t i = 0; i < device->getPSUCount(); ++i) {
+        auto psu = device->getPSU(i);
+        auto properties = psu->getPSUProperties();
+        power_detail.push_back(ftxui::hbox(
+            {ftxui::text("PSU " + std::to_string(i + 1)) |
+                 ftxui::size(ftxui::WIDTH, ftxui::LESS_THAN, 15) |
+                 ftxui::color(ftxui::Color::Cyan),
+             ftxui::text("Fan: " +
+                         std::string(properties->haveFan ? "YES" : "NO")) |
+                 ftxui::size(ftxui::WIDTH, ftxui::LESS_THAN, 15) |
+                 ftxui::color(properties->haveFan ? ftxui::Color::Green
+                                                  : ftxui::Color::Red),
+             ftxui::text("Limit: " + std::to_string(properties->ampLimit) +
+                         "A") |
+                 ftxui::size(ftxui::WIDTH, ftxui::LESS_THAN, 15) |
+                 ftxui::color(ftxui::Color::Yellow),
+             ftxui::text("") | ftxui::size(ftxui::WIDTH, ftxui::LESS_THAN, 10),
+             ftxui::text(properties->onSubdevice
+                             ? std::to_string(properties->subdeviceId)
+                             : "N/A") |
+                 ftxui::size(ftxui::WIDTH, ftxui::LESS_THAN, 10) |
+                 ftxui::color(ftxui::Color::GrayDark)}));
+      }
+    }
+    main_content.push_back(
+        ftxui::vbox({ftxui::text("⚡ Power Management") | ftxui::bold |
+                         ftxui::color(ftxui::Color::Green),
+                     ftxui::vbox(std::move(power_detail))}) |
+        ftxui::border);
+    break;
+  }
+  }
+  // Key hints: only include when stdout is a terminal and ANSI is enabled
+  if (isatty(fileno(stdout)) && !no_ansi) {
+    ftxui::Elements key_hints;
+    if (state.show_help) {
+      key_hints = {
+          ftxui::text("📋 Key Bindings:") | ftxui::bold |
+              ftxui::color(ftxui::Color::White),
+          ftxui::hbox(
+              {ftxui::text("1-5") | ftxui::color(ftxui::Color::Yellow),
+               ftxui::text(": Switch views  ") |
+                   ftxui::color(ftxui::Color::GrayDark),
+               ftxui::text("↑↓") | ftxui::color(ftxui::Color::Yellow),
+               ftxui::text(": Scroll  ") | ftxui::color(ftxui::Color::GrayDark),
+               ftxui::text("h") | ftxui::color(ftxui::Color::Yellow),
+               ftxui::text(": Toggle help  ") |
+                   ftxui::color(ftxui::Color::GrayDark),
+               ftxui::text("q/ESC") | ftxui::color(ftxui::Color::Yellow),
+               ftxui::text(": Quit") | ftxui::color(ftxui::Color::GrayDark)}),
+          ftxui::text(
+              "Views: 1=Overview 2=Engines 3=Processes 4=Power 5=Thermal") |
+              ftxui::color(ftxui::Color::GrayDark)};
+    } else {
+      key_hints = {ftxui::hbox(
+          {ftxui::text("Views: ") | ftxui::color(ftxui::Color::GrayDark),
+           ftxui::text("1") | ftxui::color(ftxui::Color::Yellow),
+           ftxui::text("=Overview ") | ftxui::color(ftxui::Color::GrayDark),
+           ftxui::text("2") | ftxui::color(ftxui::Color::Yellow),
+           ftxui::text("=Engines ") | ftxui::color(ftxui::Color::GrayDark),
+           ftxui::text("3") | ftxui::color(ftxui::Color::Yellow),
+           ftxui::text("=Processes ") | ftxui::color(ftxui::Color::GrayDark),
+           ftxui::text("4") | ftxui::color(ftxui::Color::Yellow),
+           ftxui::text("=Power ") | ftxui::color(ftxui::Color::GrayDark),
+           ftxui::text("5") | ftxui::color(ftxui::Color::Yellow),
+           ftxui::text("=Thermal ") | ftxui::color(ftxui::Color::GrayDark),
+           ftxui::text("| ") | ftxui::color(ftxui::Color::GrayDark),
+           ftxui::text("↑↓") | ftxui::color(ftxui::Color::Yellow),
+           ftxui::text("=Scroll ") | ftxui::color(ftxui::Color::GrayDark),
+           ftxui::text("h") | ftxui::color(ftxui::Color::Yellow),
+           ftxui::text("=Help ") | ftxui::color(ftxui::Color::GrayDark),
+           ftxui::text("q") | ftxui::color(ftxui::Color::Yellow),
+           ftxui::text("=Quit") | ftxui::color(ftxui::Color::GrayDark)})};
+    }
+    main_content.push_back(
+        ftxui::notflex(ftxui::vbox(std::move(key_hints))) |
+        ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, state.show_help ? 3 : 1) |
+        ftxui::notflex | ftxui::border | ftxui::color(ftxui::Color::Blue));
+  }
+  ftxui::Element root = ftxui::vbox(std::move(main_content));
+  return root;
 }
 #include <iomanip>
 #include <sstream>
@@ -14,29 +290,40 @@ ftxui::Element build_ui(Device *device, UIState &state, int screen_width, int sc
 
 // Format bytes as human-readable string
 std::string format_bytes(uint64_t bytes) {
-  static const char *sizes[] = {"B", "KB", "MB", "GB", "TB", "PB"};
-  int order = 0;
-  double num = static_cast<double>(bytes);
-  while (num >= 1024 && order < 5) {
-    order++;
-    num /= 1024;
+  const char *suffixes[] = {"B", "KB", "MB", "GB", "TB"};
+  int i = 0;
+  double count = bytes;
+  while (count >= 1024 && i < 4) {
+    count /= 1024;
+    ++i;
   }
-  std::ostringstream oss;
-  oss << std::fixed << std::setprecision(order == 0 ? 0 : 1) << num << sizes[order];
-  return oss.str();
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%.1f %s", count, suffixes[i]);
+  return buf;
 }
 
 // Color for percentage (green/yellow/red)
-
 ftxui::Color get_percentage_color(double percentage) {
-  (void)percentage;
-  return ftxui::Color{};
+  if (percentage < 30)
+    return ftxui::Color::Green;
+  if (percentage < 60)
+    return ftxui::Color::Yellow;
+  if (percentage < 80)
+    return ftxui::Color::RGB(255, 215, 0);
+  return ftxui::Color::Red;
 }
 
 // Color for temperature (green/yellow/red)
 ftxui::Color get_temp_color(double temp) {
-  (void)temp;
-  return ftxui::Color{};
+  if (temp < 50)
+    return ftxui::Color::Cyan;
+  if (temp < 70)
+    return ftxui::Color::Green;
+  if (temp < 80)
+    return ftxui::Color::Yellow;
+  if (temp < 90)
+    return ftxui::Color::RGB(255, 215, 0);
+  return ftxui::Color::Red;
 }
 
 // Longest common prefix in a vector of strings
