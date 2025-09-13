@@ -1,5 +1,6 @@
 
 #include "power_domain.h"
+#include <cmath>
 
 bool PowerDomain::initializePowerDomain() {
   ze_result_t ret = zesPowerGetProperties(power, &properties);
@@ -19,10 +20,16 @@ ze_result_t PowerDomain::updateStats() {
     return ret;
 
   if ((counter.timestamp - lastTimestamp) > 0) {
-    energy =
-        (counter.energy - lastEnergy) / (counter.timestamp - lastTimestamp);
+    double raw = static_cast<double>(counter.energy - lastEnergy) /
+                 static_cast<double>(counter.timestamp - lastTimestamp);
+    // Clamp negative, NaN, or Inf values to zero
+    if (raw < 0.0 || !std::isfinite(raw)) {
+      energy = 0.0;
+    } else {
+      energy = raw;
+    }
   } else {
-    energy = 0;
+    energy = 0.0;
   }
 
   return ZE_RESULT_SUCCESS;
