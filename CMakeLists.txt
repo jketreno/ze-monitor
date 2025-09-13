@@ -34,6 +34,7 @@ set(SOURCES
     src/power_domain.cpp
     src/psu.cpp
     src/initializable.cpp
+    src/ui.cpp
 )
 
 # Executable
