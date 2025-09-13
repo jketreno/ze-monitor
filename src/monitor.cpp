@@ -112,20 +112,137 @@ int run_monitor(const MonitorConfig& config) {
         return false;
     };
     // bool one_shot_rendered = false;
-    auto component = Renderer([&]() -> Element {
-        auto terminal = ftxui::Terminal::Size();
-        int screen_width = terminal.dimx;
-        int screen_height = terminal.dimy;
-        (void)screen_width;
-        (void)screen_height;
-        if (refresh_timer()) {
+    auto component =
+        Renderer([&]() -> Element {
+          auto terminal = ftxui::Terminal::Size();
+          int screen_width = terminal.dimx;
+          int screen_height = terminal.dimy;
+          (void)screen_width;
+          (void)screen_height;
+          if (refresh_timer()) {
             device->updateTemperatures();
             device->updateProcesses();
-        }
-        Element root = build_ui(device, state, screen_width, screen_height, no_ansi);
-        last_rendered_element = root;
-        return root;
-    });
+          }
+          Element root =
+              build_ui(device, state, screen_width, screen_height, no_ansi);
+          last_rendered_element = root;
+          return root;
+        }) |
+        CatchEvent([&](Event event) {
+          // View switching
+          if (event == Event::Character('1')) {
+            state.view_mode = ViewMode::OVERVIEW;
+            return true;
+          } else if (event == Event::Character('2')) {
+            state.view_mode = ViewMode::ENGINES;
+            return true;
+          } else if (event == Event::Character('3')) {
+            state.view_mode = ViewMode::PROCESSES;
+            return true;
+          } else if (event == Event::Character('4')) {
+            state.view_mode = ViewMode::POWER;
+            return true;
+          } else if (event == Event::Character('5')) {
+            state.view_mode = ViewMode::THERMAL;
+            return true;
+          }
+          // Scrolling
+          else if (event == Event::ArrowUp) {
+            switch (state.view_mode) {
+            case ViewMode::PROCESSES:
+              state.process_offset = std::max(0, state.process_offset - 1);
+              break;
+            case ViewMode::ENGINES:
+              state.engine_offset = std::max(0, state.engine_offset - 1);
+              break;
+            case ViewMode::THERMAL:
+              state.thermal_offset = std::max(0, state.thermal_offset - 1);
+              break;
+            case ViewMode::POWER:
+              state.power_offset = std::max(0, state.power_offset - 1);
+              break;
+            default:
+              break;
+            }
+            return true;
+          } else if (event == Event::ArrowDown) {
+            switch (state.view_mode) {
+            case ViewMode::PROCESSES: {
+              int max_offset = std::max(0, (int)device->getProcessCount() - 15);
+              state.process_offset =
+                  std::min(max_offset, state.process_offset + 1);
+              break;
+            }
+            case ViewMode::ENGINES: {
+              int max_offset = std::max(0, (int)device->getEngineCount() - 15);
+              state.engine_offset =
+                  std::min(max_offset, state.engine_offset + 1);
+              break;
+            }
+            case ViewMode::THERMAL: {
+              int max_offset =
+                  std::max(0, (int)device->getTemperatureCount() - 15);
+              state.thermal_offset =
+                  std::min(max_offset, state.thermal_offset + 1);
+              break;
+            }
+            case ViewMode::POWER: {
+              int max_offset =
+                  std::max(0, (int)device->getPowerDomainCount() - 15);
+              state.power_offset = std::min(max_offset, state.power_offset + 1);
+              break;
+            }
+            default:
+              break;
+            }
+            return true;
+          }
+          // Help toggle
+          else if (event == Event::Character('h') ||
+                   event == Event::Character('H')) {
+            state.show_help = !state.show_help;
+            return true;
+          }
+          // Quit
+          else if (event == Event::Escape || event == Event::Character('q') ||
+                   event == Event::Character('Q')) {
+            if (auto active = ScreenInteractive::Active()) {
+              try {
+                auto closure = active->WithRestoredIO([&]() {
+                  bool printed = false;
+                  try {
+                    auto term = Terminal::Size();
+                    ftxui::Screen screen(term.dimx, term.dimy);
+                    Render(screen, last_rendered_element);
+                    std::string s = screen.ToString();
+                    if (!s.empty()) {
+                      fwrite(s.c_str(), 1, s.size(), stdout);
+                      fflush(stdout);
+                      printed = true;
+                    }
+                  } catch (...) {
+                  }
+                  if (!printed) {
+                    std::string out = active->ToString();
+                    if (!out.empty()) {
+                      fwrite(out.c_str(), 1, out.size(), stdout);
+                      fflush(stdout);
+                    }
+                  }
+                });
+                closure();
+              } catch (...) {
+              }
+            }
+            screen.Exit();
+            return true;
+          }
+          // Custom event: used for periodic refresh
+          else if (event == Event::Custom) {
+            return false;
+          }
+          return false;
+        });
     std::thread refresh_thread([&]() {
         while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
