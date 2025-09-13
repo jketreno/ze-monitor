@@ -296,61 +296,8 @@ Element build_ui(Device *device, UIState &state, int screen_width,
   }
 
   case ViewMode::ENGINES: {
-    Elements engine_detail;
-    engine_detail.push_back(
-        hbox({text("ENGINE") | bold | size(WIDTH, EQUAL, 15), separator(),
-              text("UTILIZATION") | bold | flex, separator(),
-              text("SUB-DEVICE") | bold | size(WIDTH, EQUAL, 15), separator(),
-              text("STATUS") | bold | size(WIDTH, EQUAL, 15)}) |
-        color(Color::White));
-
-    int visible_engines = 15;
-    int start = state.engine_offset;
-    int end = std::min(start + visible_engines, (int)device->getEngineCount());
-
-    // Prepare engine names and remove the longest common prefix for a
-    // cleaner display.
-    std::vector<std::string> engine_names;
-    engine_names.reserve(device->getEngineCount());
-    for (uint32_t i = 0; i < device->getEngineCount(); ++i) {
-      auto e = device->getEngine(i);
-      engine_names.push_back(
-          engine_type_to_str(e->getEngineProperties()->type));
-    }
-    std::string lcp = longest_common_prefix(engine_names);
-
-    for (int i = start; i < end; ++i) {
-      auto engine = device->getEngine(i);
-      double util = engine->getEngineUtilization();
-      auto status = util > 0 ? "ACTIVE" : "IDLE";
-      auto status_color = util > 0 ? Color::Green : Color::GrayDark;
-
-      std::string name = engine_names[i];
-      if (!lcp.empty() && name.rfind(lcp, 0) == 0) {
-        name = name.substr(lcp.size());
-      }
-
-      engine_detail.push_back(hbox(
-          {notflex(text(name) | size(WIDTH, EQUAL, 15) | color(Color::Cyan)),
-           separator(),
-           xflex_grow(gauge(util / 100.0) | color(get_percentage_color(util))),
-           notflex(text(" " + std::to_string((int)util) + "%") |
-                   size(WIDTH, EQUAL, 5) | color(get_percentage_color(util))),
-           separator(),
-           notflex(text(engine->getEngineProperties()->onSubdevice
-                            ? std::to_string(
-                                  engine->getEngineProperties()->subdeviceId)
-                            : "N/A") |
-                   size(WIDTH, EQUAL, 15) | color(Color::GrayDark)),
-           separator(),
-           notflex(text(status) | size(WIDTH, EQUAL, 15) |
-                   color(status_color))}));
-    }
-
-    main_content.push_back(
-        vbox({text("🔧 Engine Details") | bold | color(Color::Green),
-              vbox(std::move(engine_detail))}) |
-        border);
+    // Use shared builder for engine details to avoid duplicate code
+    main_content.push_back(build_engine_details(device, state, 15, 15));
     break;
   }
 
