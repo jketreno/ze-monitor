@@ -179,10 +179,152 @@ build_engine_details(Device *device, UIState &state, int terminal_width,
          border;
 }
 
+// Build an Element containing the process details table. This centralizes
+// the duplicated code used in both interactive and offscreen rendering.
+// Build process list and render either a full details table or a compact
+// process summary. Sorting: primary = number of engines used (descending),
+// secondary = PID (ascending).
+static Element build_process_details(Device *device, UIState &state,
+                                     int terminal_width,
+                                     int visible_processes = 15,
+                                     bool summary = false, int top_n = 3) {
+  (void)terminal_width;
+  struct PInfo {
+    uint32_t pid;
+    uint64_t memSize;
+    uint64_t sharedSize;
+    uint64_t engines_mask;
+    int engines_count;
+    std::string command;
+  };
+
+  std::vector<PInfo> procs;
+  procs.reserve(device->getProcessCount());
+  uint64_t total_mem = 0;
+
+  for (uint32_t i = 0; i < device->getProcessCount(); ++i) {
+    auto proc = device->getProcessInfo(i);
+    auto ps = proc->getProcessState();
+    PInfo p;
+    p.pid = ps->processId;
+    p.memSize = ps->memSize;
+    p.sharedSize = ps->sharedSize;
+    p.engines_mask = ps->engines;
+    p.engines_count = static_cast<int>(__builtin_popcountll(p.engines_mask));
+    p.command = proc->getCommandLine();
+    procs.push_back(std::move(p));
+    total_mem += ps->memSize;
+  }
+
+  // Sort by engines_count desc, then PID asc
+  std::sort(procs.begin(), procs.end(), [](const PInfo &a, const PInfo &b) {
+    if (a.engines_count != b.engines_count)
+      return a.engines_count > b.engines_count;
+    return a.pid < b.pid;
+  });
+
+  if (summary) {
+    // Build a table-style summary with the same columns as the full details
+    Elements process_detail;
+    process_detail.push_back(
+        hbox({notflex(text("PID") | bold | size(WIDTH, EQUAL, 8)), separator(),
+              notflex(text("COMMAND") | bold | size(WIDTH, EQUAL, 30)),
+              separator(),
+              notflex(text("MEMORY") | bold | size(WIDTH, EQUAL, 12)),
+              separator(),
+              notflex(text("SHARED") | bold | size(WIDTH, EQUAL, 12)),
+              separator(),
+              notflex(text("ENGINES") | bold | size(WIDTH, EQUAL, 15))}) |
+        color(Color::White));
+
+    int shown = 0;
+    for (size_t i = 0; i < procs.size() && shown < top_n; ++i) {
+      const auto &p = procs[i];
+      if (p.engines_count == 0)
+        continue; // only show active processes in the summary
+
+      auto mem = device->getMemoryState();
+      auto mem_pct = mem.size > 0 ? (double)p.memSize / mem.size * 100 : 0.0;
+
+      process_detail.push_back(
+          hbox({notflex(text(std::to_string(p.pid)) | size(WIDTH, EQUAL, 8) |
+                        color(Color::Yellow)),
+                separator(),
+                notflex(text(ellipses(p.command, 30)) | size(WIDTH, EQUAL, 30) |
+                        color(Color::White)),
+                separator(),
+                notflex(text(format_bytes(p.memSize)) | size(WIDTH, EQUAL, 12) |
+                        color(get_percentage_color(mem_pct))),
+                separator(),
+                notflex(text(format_bytes(p.sharedSize)) |
+                        size(WIDTH, EQUAL, 12) | color(Color::GrayDark)),
+                separator(),
+                notflex(text(engine_flags_to_str(p.engines_mask)) |
+                        size(WIDTH, EQUAL, 15) | color(Color::Cyan))}));
+
+      ++shown;
+    }
+
+    return vbox({hbox(text("📊 Process Summary") | bold | color(Color::Green),
+                      separator(), text("Processes: ") | color(Color::White),
+                      text(std::to_string((int)procs.size())) |
+                          color(Color::GrayLight),
+                      separator(), text("Total mem:") | color(Color::White),
+                      text(format_bytes(total_mem)) | color(Color::White)),
+                 vbox(std::move(process_detail))}) |
+           border;
+  }
+
+  // Full details view: render header then the requested slice of the sorted
+  // process list using state.process_offset for paging.
+  Elements process_detail;
+  process_detail.push_back(
+      hbox(
+          {notflex(text("PID") | bold | size(WIDTH, EQUAL, 8)), separator(),
+           notflex(text("COMMAND") | bold | size(WIDTH, EQUAL, 30)),
+           separator(), notflex(text("MEMORY") | bold | size(WIDTH, EQUAL, 12)),
+           separator(), notflex(text("SHARED") | bold | size(WIDTH, EQUAL, 12)),
+           separator(),
+           notflex(text("ENGINES") | bold | size(WIDTH, EQUAL, 15))}) |
+      color(Color::White));
+
+  int start = state.process_offset;
+  // clamp start to available range
+  if (start < 0)
+    start = 0;
+  int end = std::min(start + visible_processes, (int)procs.size());
+
+  for (int i = start; i < end; ++i) {
+    const auto &p = procs[i];
+    auto mem = device->getMemoryState();
+    auto mem_pct = mem.size > 0 ? (double)p.memSize / mem.size * 100 : 0.0;
+
+    process_detail.push_back(
+        hbox({notflex(text(std::to_string(p.pid)) | size(WIDTH, EQUAL, 8) |
+                      color(Color::Yellow)),
+              separator(),
+              notflex(text(p.command) | size(WIDTH, EQUAL, 30) |
+                      color(Color::White)),
+              separator(),
+              notflex(text(format_bytes(p.memSize)) | size(WIDTH, EQUAL, 12) |
+                      color(get_percentage_color(mem_pct))),
+              separator(),
+              notflex(text(format_bytes(p.sharedSize)) |
+                      size(WIDTH, EQUAL, 12) | color(Color::GrayDark)),
+              separator(),
+              notflex(text(engine_flags_to_str(p.engines_mask)) |
+                      size(WIDTH, EQUAL, 15) | color(Color::Cyan))}));
+  }
+
+  return vbox({text("📊 Process Details") | bold | color(Color::Green),
+               vbox(std::move(process_detail))}) |
+         border;
+}
+
 // Build the FTXUI element for the main UI. This is reused for interactive
 // rendering and offscreen (non-tty) rendering.
 Element build_ui(Device *device, UIState &state, int screen_width,
-                 int screen_height) {
+                 int screen_height, bool no_ansi = false) {
   // Silence unused parameter warnings when building without using exact sizes
   (void)screen_width;
   (void)screen_height;
@@ -284,39 +426,10 @@ Element build_ui(Device *device, UIState &state, int screen_width,
     main_content.push_back(build_engine_details(
         device, state, screen_width, 15, "ALL$", "🔧 Engine Utilization"));
 
-    // Process summary: total processes, total memory used, top 3 by memory
-    uint32_t proc_count = device->getProcessCount();
-    uint64_t total_proc_mem = 0;
-    std::vector<std::pair<uint64_t, std::string>> proc_mem_list;
-    for (uint32_t i = 0; i < proc_count; ++i) {
-      auto proc = device->getProcessInfo(i);
-      auto ps = proc->getProcessState();
-      total_proc_mem += ps->memSize;
-      proc_mem_list.emplace_back(ps->memSize, proc->getCommandLine());
-    }
-    std::sort(proc_mem_list.begin(), proc_mem_list.end(),
-              [](auto &a, auto &b) { return a.first > b.first; });
-
-    // Compact single-line process summary: Count | Total mem | Top 3
-    Elements summary_line;
-    std::ostringstream ss;
-    ss << "Processes: " << proc_count
-       << " | Total: " << format_bytes(total_proc_mem) << " | Top: ";
-
-    int top_n = std::min((size_t)3, proc_mem_list.size());
-    for (int i = 0; i < top_n; ++i) {
-      if (i > 0)
-        ss << ", ";
-      ss << ellipses(proc_mem_list[i].second, 30) << " ("
-         << format_bytes(proc_mem_list[i].first) << ")";
-    }
-
-    summary_line.push_back(text(ss.str()) | color(Color::White));
-
+    // Process summary: use shared build_process_details in summary mode so
+    // the ordering and selection match the full Process Details view.
     main_content.push_back(
-        vbox({text("📊 Process Summary") | bold | color(Color::Green),
-              hbox(std::move(summary_line))}) |
-        border);
+        build_process_details(device, state, screen_width, 15, true, 3));
     break;
   }
 
@@ -328,51 +441,9 @@ Element build_ui(Device *device, UIState &state, int screen_width,
   }
 
   case ViewMode::PROCESSES: {
-    Elements process_detail;
-    process_detail.push_back(
-        hbox({notflex(text("PID") | bold | size(WIDTH, EQUAL, 8)), separator(),
-              notflex(text("COMMAND") | bold | size(WIDTH, EQUAL, 30)),
-              separator(),
-              notflex(text("MEMORY") | bold | size(WIDTH, EQUAL, 12)),
-              separator(),
-              notflex(text("SHARED") | bold | size(WIDTH, EQUAL, 12)),
-              separator(),
-              notflex(text("ENGINES") | bold | size(WIDTH, EQUAL, 15))}) |
-        color(Color::White));
-
-    int visible_processes = 15;
-    int start = state.process_offset;
-    int end =
-        std::min(start + visible_processes, (int)device->getProcessCount());
-
-    for (int i = start; i < end; ++i) {
-      auto proc = device->getProcessInfo(i);
-      auto mem_pct = mem.size > 0 ? (double)proc->getProcessState()->memSize /
-                                        mem.size * 100
-                                  : 0.0;
-
-      process_detail.push_back(hbox(
-          {notflex(text(std::to_string(proc->getProcessState()->processId)) |
-                   size(WIDTH, EQUAL, 8) | color(Color::Yellow)),
-           separator(),
-           notflex(text(proc->getCommandLine()) | size(WIDTH, EQUAL, 30) |
-                   color(Color::White)),
-           separator(),
-           notflex(text(format_bytes(proc->getProcessState()->memSize)) |
-                   size(WIDTH, EQUAL, 12) |
-                   color(get_percentage_color(mem_pct))),
-           separator(),
-           notflex(text(format_bytes(proc->getProcessState()->sharedSize)) |
-                   size(WIDTH, EQUAL, 12) | color(Color::GrayDark)),
-           separator(),
-           notflex(text(engine_flags_to_str(proc->getProcessState()->engines)) |
-                   size(WIDTH, EQUAL, 15) | color(Color::Cyan))}));
-    }
-
+    // Use shared builder for process details
     main_content.push_back(
-        vbox({text("📊 Process Details") | bold | color(Color::Green),
-              vbox(std::move(process_detail))}) |
-        border);
+        build_process_details(device, state, screen_width, 15));
     break;
   }
 
@@ -479,8 +550,8 @@ Element build_ui(Device *device, UIState &state, int screen_width,
   }
   }
 
-  // Key hints: only include when stdout is a terminal
-  if (isatty(fileno(stdout))) {
+  // Key hints: only include when stdout is a terminal and ANSI is enabled
+  if (isatty(fileno(stdout)) && !no_ansi) {
     Elements key_hints;
     if (state.show_help) {
       key_hints = {
@@ -1060,7 +1131,7 @@ int main(int argc, char *argv[]) {
     // Render to a very tall offscreen Screen, then trim trailing empty
     // rows to compute the exact height to print.
     const int max_height = 2000;
-    Element root = build_ui(device, state, width, max_height);
+    Element root = build_ui(device, state, width, max_height, no_ansi);
     try {
       ftxui::Screen screen(width, max_height);
       Render(screen, root);
@@ -1263,43 +1334,10 @@ int main(int argc, char *argv[]) {
                                                       screen_width, 15, "ALL$",
                                                       "🔧 Engine Utilization"));
 
-          // Process summary: total processes, total memory used, top 3 by
-          // memory
-          uint32_t proc_count = device->getProcessCount();
-          uint64_t total_proc_mem = 0;
-          std::vector<std::pair<uint64_t, std::string>> proc_mem_list;
-          for (uint32_t i = 0; i < proc_count; ++i) {
-            auto proc = device->getProcessInfo(i);
-            auto ps = proc->getProcessState();
-            total_proc_mem += ps->memSize;
-            proc_mem_list.emplace_back(ps->memSize, proc->getCommandLine());
-          }
-          std::sort(proc_mem_list.begin(), proc_mem_list.end(),
-                    [](auto &a, auto &b) { return a.first > b.first; });
-
-          // Compact single-line process summary: Count | Total mem | Top 3
-          Elements summary_line;
-          std::ostringstream ss2;
-          ss2 << "Processes: " << proc_count
-              << " | Total mem: " << format_bytes(total_proc_mem);
-          summary_line.push_back(text(ss2.str()) | color(Color::White));
-
-          Elements top_processes;
-          int top_n2 = std::min((size_t)3, proc_mem_list.size());
-          for (int i = 0; i < top_n2; ++i) {
-            std::ostringstream ss2;
-            ss2 << ellipses(proc_mem_list[i].second, screen_width) << " ("
-                << format_bytes(proc_mem_list[i].first) << ")";
-            top_processes.push_back(text(ss2.str()) | color(Color::Cyan));
-          }
-
+          // Process summary: use shared process summary builder to keep
+          // ordering and selection consistent with the full details view.
           main_content.push_back(
-              vbox({
-                  hbox(text("📊 Process Summary ") | bold | color(Color::Green),
-                       std::move(summary_line)),
-                  vbox(std::move(top_processes)),
-              }) |
-              border);
+              build_process_details(device, state, screen_width, 15, true, 3));
           break;
         }
 
@@ -1473,9 +1511,11 @@ int main(int argc, char *argv[]) {
         }
         }
 
-        // Key hints. Hide hints entirely when stdout isn't a TTY (non-tty)
+        // Key hints. Hide hints entirely when stdout isn't a TTY or when
+        // --no-ansi
         Elements key_hints;
-        if ((isatty(fileno(stdout)) && state.show_help) || state.show_help) {
+        if (((isatty(fileno(stdout)) && !no_ansi) && state.show_help) ||
+            state.show_help) {
           key_hints = {
               text("📋 Key Bindings:") | bold | color(Color::White),
               hbox({text("1-5") | color(Color::Yellow),
@@ -1510,8 +1550,9 @@ int main(int argc, char *argv[]) {
                              text("=Quit") | color(Color::GrayDark)})};
         }
 
-        // Only show the key hints/footer when stdout is a terminal
-        if (isatty(fileno(stdout))) {
+        // Only show the key hints/footer when stdout is a terminal and ANSI is
+        // enabled
+        if (isatty(fileno(stdout)) && !no_ansi) {
           main_content.push_back(notflex(vbox(std::move(key_hints))) |
                                  size(HEIGHT, EQUAL, state.show_help ? 3 : 1) |
                                  notflex | border | color(Color::Blue));
