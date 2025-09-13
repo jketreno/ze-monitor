@@ -14,28 +14,37 @@
 using namespace ftxui;
 
 int run_monitor(const MonitorConfig& config) {
-    Device* device = config.device;
-    UIState& state = *config.state;
-    int wait_ms = config.wait_ms;
-    bool no_ansi = config.no_ansi;
-    std::string start_mode = config.start_mode;
+  Device *device = config.device;
+  UIState &state = *config.state;
+  int wait_ms = config.wait_ms;
+  bool no_ansi = config.no_ansi;
+  std::string start_mode = config.start_mode;
+  bool one_shot = config.one_shot;
 
-    // If the user passed --mode, set the starting view
-    if (!start_mode.empty()) {
-        if (start_mode == "overview" || start_mode == "OVERVIEW" || start_mode == "0" || start_mode == "1") {
-            state.view_mode = ViewMode::OVERVIEW;
-        } else if (start_mode == "engines" || start_mode == "ENGINES" || start_mode == "2") {
-            state.view_mode = ViewMode::ENGINES;
-        } else if (start_mode == "processes" || start_mode == "PROCESSES" || start_mode == "3") {
-            state.view_mode = ViewMode::PROCESSES;
-        } else if (start_mode == "power" || start_mode == "POWER" || start_mode == "4") {
-            state.view_mode = ViewMode::POWER;
-        } else if (start_mode == "thermal" || start_mode == "THERMAL" || start_mode == "5") {
-            state.view_mode = ViewMode::THERMAL;
-        } else {
-            fprintf(stderr, "Unknown mode: %s; valid: overview|engines|processes|power|thermal\n", start_mode.c_str());
-            return 1;
-        }
+  // If the user passed --mode, set the starting view
+  if (!start_mode.empty()) {
+    if (start_mode == "overview" || start_mode == "OVERVIEW" ||
+        start_mode == "0" || start_mode == "1") {
+      state.view_mode = ViewMode::OVERVIEW;
+    } else if (start_mode == "engines" || start_mode == "ENGINES" ||
+               start_mode == "2") {
+      state.view_mode = ViewMode::ENGINES;
+    } else if (start_mode == "processes" || start_mode == "PROCESSES" ||
+               start_mode == "3") {
+      state.view_mode = ViewMode::PROCESSES;
+    } else if (start_mode == "power" || start_mode == "POWER" ||
+               start_mode == "4") {
+      state.view_mode = ViewMode::POWER;
+    } else if (start_mode == "thermal" || start_mode == "THERMAL" ||
+               start_mode == "5") {
+      state.view_mode = ViewMode::THERMAL;
+    } else {
+      fprintf(
+          stderr,
+          "Unknown mode: %s; valid: overview|engines|processes|power|thermal\n",
+          start_mode.c_str());
+      return 1;
+    }
     }
 
     if (!isatty(fileno(stdout)) || no_ansi) {
@@ -112,16 +121,48 @@ int run_monitor(const MonitorConfig& config) {
         return false;
     };
     // bool one_shot_rendered = false;
+    bool one_shot_rendered = false;
+    bool one_shot_waited = false;
+    Event last_event;
     auto component =
         Renderer([&]() -> Element {
+          // Prevent UI redraw and stat update on mouse events
+          if (last_event.is_mouse()) {
+            return last_rendered_element;
+          }
           auto terminal = ftxui::Terminal::Size();
           int screen_width = terminal.dimx;
           int screen_height = terminal.dimy;
           (void)screen_width;
           (void)screen_height;
+          if (one_shot && !one_shot_waited) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(wait_ms));
+            one_shot_waited = true;
+          }
           if (refresh_timer()) {
             device->updateTemperatures();
             device->updateProcesses();
+            if (one_shot && !one_shot_rendered) {
+              one_shot_rendered = true;
+              // Print the final UI to stdout before exiting
+              if (auto active = ScreenInteractive::Active()) {
+                try {
+                  auto closure = active->WithRestoredIO([&]() {
+                    auto term = Terminal::Size();
+                    ftxui::Screen screen(term.dimx, term.dimy);
+                    Render(screen, last_rendered_element);
+                    std::string s = screen.ToString();
+                    if (!s.empty()) {
+                      fwrite(s.c_str(), 1, s.size(), stdout);
+                      fflush(stdout);
+                    }
+                  });
+                  closure();
+                } catch (...) {
+                }
+                active->Exit();
+              }
+            }
           }
           Element root =
               build_ui(device, state, screen_width, screen_height, no_ansi);
@@ -129,6 +170,11 @@ int run_monitor(const MonitorConfig& config) {
           return root;
         }) |
         CatchEvent([&](Event event) {
+          last_event = event;
+          // Ignore mouse events to avoid UI redraws
+          if (event.is_mouse()) {
+            return false;
+          }
           // View switching
           if (event == Event::Character('1')) {
             state.view_mode = ViewMode::OVERVIEW;
