@@ -67,20 +67,18 @@ static std::string longest_common_prefix(const std::vector<std::string> &v) {
 
 // Build an Element containing the engine details table. This centralizes
 // the duplicated code used in both interactive and offscreen rendering.
-static Element build_engine_details(Device *device, UIState &state,
-                                    int label_width = 15,
-                                    int visible_engines = 15) {
+static Element
+build_engine_details(Device *device, UIState &state, int terminal_width,
+                     int visible_engines = 15,
+                     const std::string &filter_pattern = std::string(),
+                     const std::string &title = "🔧 Engine Details") {
   Elements engine_detail;
-  engine_detail.push_back(
-      hbox({text("ENGINE") | bold | size(WIDTH, EQUAL, label_width),
-            separator(), text("UTILIZATION") | bold | flex, separator(),
-            text("SUB-DEVICE") | bold | size(WIDTH, EQUAL, label_width),
-            separator(),
-            text("STATUS") | bold | size(WIDTH, EQUAL, label_width)}) |
-      color(Color::White));
+  // We'll compute the engine column width from the longest engine name and
+  // let the utilization column take the remaining space (minus sub-dev and
+  // status columns). If utilization would end up less than 10 chars wide,
+  // fall back to ellipsizing engine names to 10 chars.
 
-  // Prepare engine names and remove the longest common prefix for a
-  // cleaner display.
+  // First gather engine names and strip longest common prefix for display.
   std::vector<std::string> engine_names;
   engine_names.reserve(device->getEngineCount());
   for (uint32_t i = 0; i < device->getEngineCount(); ++i) {
@@ -88,6 +86,56 @@ static Element build_engine_details(Device *device, UIState &state,
     engine_names.push_back(engine_type_to_str(e->getEngineProperties()->type));
   }
   std::string lcp = longest_common_prefix(engine_names);
+  std::vector<std::string> display_names;
+  display_names.reserve(engine_names.size());
+  size_t max_name_len = 0;
+  for (const auto &n : engine_names) {
+    std::string name = n;
+    if (!lcp.empty() && name.rfind(lcp, 0) == 0) {
+      name = name.substr(lcp.size());
+    }
+    display_names.push_back(name);
+    if (name.length() > max_name_len)
+      max_name_len = name.length();
+  }
+
+  // Fixed widths for sub-device and status columns (retain previous defaults)
+  const int subdev_w = 15;
+  const int status_w = 15;
+  const int percent_w = 5;  // the " 0%" field
+  const int separators = 3; // number of separator characters between columns
+
+  int engine_col = (int)max_name_len;
+  // Compute available width for utilization column
+  int util_w = terminal_width - engine_col - subdev_w - status_w - percent_w -
+               separators;
+  // If utilization would be too narrow, cap engine column and ellipsize names
+  if (util_w < 10) {
+    engine_col = std::min(10, engine_col);
+    // recompute util width after capping engine column
+    util_w = terminal_width - engine_col - subdev_w - status_w - percent_w -
+             separators;
+  }
+
+  // Build header using computed column widths
+  engine_detail.push_back(
+      hbox({text("ENGINE") | bold | size(WIDTH, EQUAL, engine_col), separator(),
+            text("UTILIZATION") | bold | flex, separator(),
+            text("SUB-DEVICE") | bold | size(WIDTH, EQUAL, subdev_w),
+            separator(),
+            text("STATUS") | bold | size(WIDTH, EQUAL, status_w)}) |
+      color(Color::White));
+
+  // Compile regex filter if provided
+  bool use_filter = !filter_pattern.empty();
+  std::regex filter_re;
+  if (use_filter) {
+    try {
+      filter_re = std::regex(filter_pattern);
+    } catch (...) {
+      use_filter = false;
+    }
+  }
 
   int start = state.engine_offset;
   int end = std::min(start + visible_engines, (int)device->getEngineCount());
@@ -98,30 +146,35 @@ static Element build_engine_details(Device *device, UIState &state,
     auto status = util > 0 ? "ACTIVE" : "IDLE";
     auto status_color = util > 0 ? Color::Green : Color::GrayDark;
 
-    std::string name = engine_names[i];
-    if (!lcp.empty() && name.rfind(lcp, 0) == 0) {
-      name = name.substr(lcp.size());
+    std::string name = display_names[i];
+    // Apply filter if requested (match against the display name)
+    if (use_filter && !std::regex_search(name, filter_re))
+      continue;
+    // If we capped engine_col to 10 due to narrow util column, ellipsize name
+    if ((int)name.length() > engine_col) {
+      name = ellipses(name, engine_col);
     }
 
     engine_detail.push_back(hbox(
-        {notflex(text(name) | size(WIDTH, EQUAL, label_width) |
+        {notflex(text(name) | size(WIDTH, EQUAL, engine_col) |
                  color(Color::Cyan)),
          separator(),
          xflex_grow(gauge(util / 100.0) | color(get_percentage_color(util))),
          notflex(text(" " + std::to_string((int)util) + "%") |
-                 size(WIDTH, EQUAL, 5) | color(get_percentage_color(util))),
+                 size(WIDTH, EQUAL, percent_w) |
+                 color(get_percentage_color(util))),
          separator(),
          notflex(text(engine->getEngineProperties()->onSubdevice
                           ? std::to_string(
                                 engine->getEngineProperties()->subdeviceId)
                           : "N/A") |
-                 size(WIDTH, EQUAL, label_width) | color(Color::GrayDark)),
+                 size(WIDTH, EQUAL, subdev_w) | color(Color::GrayDark)),
          separator(),
-         notflex(text(status) | size(WIDTH, EQUAL, label_width) |
+         notflex(text(status) | size(WIDTH, EQUAL, status_w) |
                  color(status_color))}));
   }
 
-  return vbox({text("🔧 Engine Details") | bold | color(Color::Green),
+  return vbox({text(title) | bold | color(Color::Green),
                vbox(std::move(engine_detail))}) |
          border;
 }
@@ -227,37 +280,9 @@ Element build_ui(Device *device, UIState &state, int screen_width,
     }
     std::string lcp = longest_common_prefix(engine_names);
 
-    for (uint32_t i = 0; i < device->getEngineCount(); ++i) {
-      auto engine = device->getEngine(i);
-      std::string name = engine_names[i];
-      // Remove common prefix if present
-      if (!lcp.empty() && name.rfind(lcp, 0) == 0) {
-        name = name.substr(lcp.size());
-      }
-      if (!std::regex_search(name, all_re))
-        continue;
-      double util = engine->getEngineUtilization();
-      auto subdev =
-          engine->getEngineProperties()->onSubdevice
-              ? std::to_string(engine->getEngineProperties()->subdeviceId)
-              : "N/A";
-
-      engine_rows.push_back(hbox(
-          {notflex(text(ellipses(name, 30, true)) | size(WIDTH, EQUAL, 30) |
-                   color(Color::Cyan)),
-           separator(),
-           xflex_grow(gauge(util / 100.0) | color(get_percentage_color(util))),
-           notflex(text(" " + std::to_string((int)util) + "%") |
-                   size(WIDTH, EQUAL, 5) | color(get_percentage_color(util))),
-           separator(),
-           notflex(text(subdev) | size(WIDTH, EQUAL, 10) |
-                   color(Color::GrayDark))}));
-    }
-
-    main_content.push_back(
-        vbox({text("🔧 Engine Utilization") | bold | color(Color::Green),
-              vbox(std::move(engine_rows))}) |
-        border);
+    // Reuse engine details builder but only include aggregate engines (ALL$)
+    main_content.push_back(build_engine_details(
+        device, state, screen_width, 15, "ALL$", "🔧 Engine Utilization"));
 
     // Process summary: total processes, total memory used, top 3 by memory
     uint32_t proc_count = device->getProcessCount();
@@ -297,7 +322,8 @@ Element build_ui(Device *device, UIState &state, int screen_width,
 
   case ViewMode::ENGINES: {
     // Use shared builder for engine details to avoid duplicate code
-    main_content.push_back(build_engine_details(device, state, 15, 15));
+    main_content.push_back(
+        build_engine_details(device, state, screen_width, 15));
     break;
   }
 
@@ -1232,38 +1258,10 @@ int main(int argc, char *argv[]) {
           }
           std::string lcp = longest_common_prefix(engine_names);
 
-          for (uint32_t i = 0; i < device->getEngineCount(); ++i) {
-            auto engine = device->getEngine(i);
-            std::string name = engine_names[i];
-            if (!lcp.empty() && name.rfind(lcp, 0) == 0) {
-              name = name.substr(lcp.size());
-            }
-            if (!std::regex_search(name, all_re))
-              continue;
-            double util = engine->getEngineUtilization();
-            auto subdev =
-                engine->getEngineProperties()->onSubdevice
-                    ? std::to_string(engine->getEngineProperties()->subdeviceId)
-                    : "N/A";
-
-            engine_rows.push_back(
-                hbox({notflex(text(ellipses(name, 30, true)) |
-                              size(WIDTH, EQUAL, 30) | color(Color::Cyan)),
-                      separator(),
-                      xflex_grow(gauge(util / 100.0) |
-                                 color(get_percentage_color(util))),
-                      notflex(text(" " + std::to_string((int)util) + "%") |
-                              size(WIDTH, EQUAL, 5) |
-                              color(get_percentage_color(util))),
-                      separator(),
-                      notflex(text(subdev) | size(WIDTH, EQUAL, 10) |
-                              color(Color::GrayDark))}));
-          }
-
-          main_content.push_back(
-              vbox({text("🔧 Engine Utilization") | bold | color(Color::Green),
-                    vbox(std::move(engine_rows))}) |
-              border);
+          // Reuse engine details builder filtered to aggregate engines (ALL$)
+          main_content.push_back(build_engine_details(device, state,
+                                                      screen_width, 15, "ALL$",
+                                                      "🔧 Engine Utilization"));
 
           // Process summary: total processes, total memory used, top 3 by
           // memory
@@ -1307,7 +1305,8 @@ int main(int argc, char *argv[]) {
 
         case ViewMode::ENGINES: {
           // Use shared builder for engine details
-          main_content.push_back(build_engine_details(device, state, 15, 15));
+          main_content.push_back(
+              build_engine_details(device, state, screen_width, 15));
           break;
         }
 
