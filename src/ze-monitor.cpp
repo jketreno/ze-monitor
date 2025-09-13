@@ -50,10 +50,89 @@ Color get_percentage_color(double percentage);
 Color get_temp_color(double temp);
 std::string ellipses(std::string str, int width, bool from_end = false);
 
+// Return the longest common prefix of the provided strings.
+static std::string longest_common_prefix(const std::vector<std::string> &v) {
+  if (v.empty())
+    return std::string();
+  std::string prefix = v[0];
+  for (size_t i = 1; i < v.size() && !prefix.empty(); ++i) {
+    size_t j = 0;
+    const std::string &s = v[i];
+    while (j < prefix.size() && j < s.size() && prefix[j] == s[j])
+      ++j;
+    prefix.resize(j);
+  }
+  return prefix;
+}
+
+// Build an Element containing the engine details table. This centralizes
+// the duplicated code used in both interactive and offscreen rendering.
+static Element build_engine_details(Device *device, UIState &state,
+                                    int label_width = 15,
+                                    int visible_engines = 15) {
+  Elements engine_detail;
+  engine_detail.push_back(
+      hbox({text("ENGINE") | bold | size(WIDTH, EQUAL, label_width),
+            separator(), text("UTILIZATION") | bold | flex, separator(),
+            text("SUB-DEVICE") | bold | size(WIDTH, EQUAL, label_width),
+            separator(),
+            text("STATUS") | bold | size(WIDTH, EQUAL, label_width)}) |
+      color(Color::White));
+
+  // Prepare engine names and remove the longest common prefix for a
+  // cleaner display.
+  std::vector<std::string> engine_names;
+  engine_names.reserve(device->getEngineCount());
+  for (uint32_t i = 0; i < device->getEngineCount(); ++i) {
+    auto e = device->getEngine(i);
+    engine_names.push_back(engine_type_to_str(e->getEngineProperties()->type));
+  }
+  std::string lcp = longest_common_prefix(engine_names);
+
+  int start = state.engine_offset;
+  int end = std::min(start + visible_engines, (int)device->getEngineCount());
+
+  for (int i = start; i < end; ++i) {
+    auto engine = device->getEngine(i);
+    double util = engine->getEngineUtilization();
+    auto status = util > 0 ? "ACTIVE" : "IDLE";
+    auto status_color = util > 0 ? Color::Green : Color::GrayDark;
+
+    std::string name = engine_names[i];
+    if (!lcp.empty() && name.rfind(lcp, 0) == 0) {
+      name = name.substr(lcp.size());
+    }
+
+    engine_detail.push_back(hbox(
+        {notflex(text(name) | size(WIDTH, EQUAL, label_width) |
+                 color(Color::Cyan)),
+         separator(),
+         xflex_grow(gauge(util / 100.0) | color(get_percentage_color(util))),
+         notflex(text(" " + std::to_string((int)util) + "%") |
+                 size(WIDTH, EQUAL, 5) | color(get_percentage_color(util))),
+         separator(),
+         notflex(text(engine->getEngineProperties()->onSubdevice
+                          ? std::to_string(
+                                engine->getEngineProperties()->subdeviceId)
+                          : "N/A") |
+                 size(WIDTH, EQUAL, label_width) | color(Color::GrayDark)),
+         separator(),
+         notflex(text(status) | size(WIDTH, EQUAL, label_width) |
+                 color(status_color))}));
+  }
+
+  return vbox({text("🔧 Engine Details") | bold | color(Color::Green),
+               vbox(std::move(engine_detail))}) |
+         border;
+}
+
 // Build the FTXUI element for the main UI. This is reused for interactive
 // rendering and offscreen (non-tty) rendering.
 Element build_ui(Device *device, UIState &state, int screen_width,
                  int screen_height) {
+  // Silence unused parameter warnings when building without using exact sizes
+  (void)screen_width;
+  (void)screen_height;
   // Auto refresh: update temperatures and processes if a second passed.
   auto now = std::chrono::steady_clock::now();
   if (now - state.refresh_time > std::chrono::seconds(1)) {
@@ -137,27 +216,42 @@ Element build_ui(Device *device, UIState &state, int screen_width,
 
     // Only show aggregate engines (names ending with ALL)
     std::regex all_re("ALL$");
+
+    // Build list of engine names, compute longest common prefix and strip it
+    std::vector<std::string> engine_names;
+    engine_names.reserve(device->getEngineCount());
     for (uint32_t i = 0; i < device->getEngineCount(); ++i) {
       auto engine = device->getEngine(i);
-      std::string name = engine_type_to_str(engine->getEngineProperties()->type);
+      engine_names.push_back(
+          engine_type_to_str(engine->getEngineProperties()->type));
+    }
+    std::string lcp = longest_common_prefix(engine_names);
+
+    for (uint32_t i = 0; i < device->getEngineCount(); ++i) {
+      auto engine = device->getEngine(i);
+      std::string name = engine_names[i];
+      // Remove common prefix if present
+      if (!lcp.empty() && name.rfind(lcp, 0) == 0) {
+        name = name.substr(lcp.size());
+      }
       if (!std::regex_search(name, all_re))
-  continue;
+        continue;
       double util = engine->getEngineUtilization();
       auto subdev =
-    engine->getEngineProperties()->onSubdevice
-        ? std::to_string(engine->getEngineProperties()->subdeviceId)
-        : "N/A";
+          engine->getEngineProperties()->onSubdevice
+              ? std::to_string(engine->getEngineProperties()->subdeviceId)
+              : "N/A";
 
       engine_rows.push_back(hbox(
-    {notflex(text(ellipses(name, 30, true)) |
-       size(WIDTH, EQUAL, 30) | color(Color::Cyan)),
-     separator(),
-     xflex_grow(gauge(util / 100.0) | color(get_percentage_color(util))),
-     notflex(text(" " + std::to_string((int)util) + "%") |
-       size(WIDTH, EQUAL, 5) | color(get_percentage_color(util))),
-     separator(),
-     notflex(text(subdev) | size(WIDTH, EQUAL, 10) |
-       color(Color::GrayDark))}));
+          {notflex(text(ellipses(name, 30, true)) | size(WIDTH, EQUAL, 30) |
+                   color(Color::Cyan)),
+           separator(),
+           xflex_grow(gauge(util / 100.0) | color(get_percentage_color(util))),
+           notflex(text(" " + std::to_string((int)util) + "%") |
+                   size(WIDTH, EQUAL, 5) | color(get_percentage_color(util))),
+           separator(),
+           notflex(text(subdev) | size(WIDTH, EQUAL, 10) |
+                   color(Color::GrayDark))}));
     }
 
     main_content.push_back(
@@ -178,29 +272,25 @@ Element build_ui(Device *device, UIState &state, int screen_width,
     std::sort(proc_mem_list.begin(), proc_mem_list.end(),
               [](auto &a, auto &b) { return a.first > b.first; });
 
-    Elements summary_rows;
-    summary_rows.push_back(text("Processes: ") | color(Color::White) |
-                           bold);
-    summary_rows.push_back(text(" Count: " + std::to_string(proc_count)) |
-                           color(Color::Yellow));
-    summary_rows.push_back(text(" Total GPU Memory: " +
-                               format_bytes(total_proc_mem)) |
-                           color(Color::Cyan));
+    // Compact single-line process summary: Count | Total mem | Top 3
+    Elements summary_line;
+    std::ostringstream ss;
+    ss << "Processes: " << proc_count
+       << " | Total: " << format_bytes(total_proc_mem) << " | Top: ";
 
     int top_n = std::min((size_t)3, proc_mem_list.size());
     for (int i = 0; i < top_n; ++i) {
-      summary_rows.push_back(text(" Top " + std::to_string(i + 1) + ": ") |
-                             color(Color::GrayDark) |
-                             size(WIDTH, LESS_THAN, 60));
-      summary_rows.push_back(text(ellipses(proc_mem_list[i].second, 60)) |
-                             color(Color::White));
-      summary_rows.push_back(text(format_bytes(proc_mem_list[i].first)) |
-                             color(Color::Yellow));
+      if (i > 0)
+        ss << ", ";
+      ss << ellipses(proc_mem_list[i].second, 30) << " ("
+         << format_bytes(proc_mem_list[i].first) << ")";
     }
+
+    summary_line.push_back(text(ss.str()) | color(Color::White));
 
     main_content.push_back(
         vbox({text("📊 Process Summary") | bold | color(Color::Green),
-              hbox({vbox(std::move(summary_rows))})}) |
+              hbox(std::move(summary_line))}) |
         border);
     break;
   }
@@ -218,16 +308,30 @@ Element build_ui(Device *device, UIState &state, int screen_width,
     int start = state.engine_offset;
     int end = std::min(start + visible_engines, (int)device->getEngineCount());
 
+    // Prepare engine names and remove the longest common prefix for a
+    // cleaner display.
+    std::vector<std::string> engine_names;
+    engine_names.reserve(device->getEngineCount());
+    for (uint32_t i = 0; i < device->getEngineCount(); ++i) {
+      auto e = device->getEngine(i);
+      engine_names.push_back(
+          engine_type_to_str(e->getEngineProperties()->type));
+    }
+    std::string lcp = longest_common_prefix(engine_names);
+
     for (int i = start; i < end; ++i) {
       auto engine = device->getEngine(i);
       double util = engine->getEngineUtilization();
       auto status = util > 0 ? "ACTIVE" : "IDLE";
       auto status_color = util > 0 ? Color::Green : Color::GrayDark;
 
+      std::string name = engine_names[i];
+      if (!lcp.empty() && name.rfind(lcp, 0) == 0) {
+        name = name.substr(lcp.size());
+      }
+
       engine_detail.push_back(hbox(
-          {notflex(
-               text(engine_type_to_str(engine->getEngineProperties()->type)) |
-               size(WIDTH, EQUAL, 15) | color(Color::Cyan)),
+          {notflex(text(name) | size(WIDTH, EQUAL, 15) | color(Color::Cyan)),
            separator(),
            xflex_grow(gauge(util / 100.0) | color(get_percentage_color(util))),
            notflex(text(" " + std::to_string((int)util) + "%") |
@@ -402,45 +506,47 @@ Element build_ui(Device *device, UIState &state, int screen_width,
   }
   }
 
-  // Key hints
-  Elements key_hints;
-  if (state.show_help) {
-    key_hints = {
-        text("📋 Key Bindings:") | bold | color(Color::White),
-        hbox({text("1-5") | color(Color::Yellow),
-              text(": Switch views  ") | color(Color::GrayDark),
-              text("↑↓") | color(Color::Yellow),
-              text(": Scroll  ") | color(Color::GrayDark),
-              text("h") | color(Color::Yellow),
-              text(": Toggle help  ") | color(Color::GrayDark),
-              text("q/ESC") | color(Color::Yellow),
-              text(": Quit") | color(Color::GrayDark)}),
-        text("Views: 1=Overview 2=Engines 3=Processes 4=Power 5=Thermal") |
-            color(Color::GrayDark)};
-  } else {
-    key_hints = {hbox({text("Views: ") | color(Color::GrayDark),
-                       text("1") | color(Color::Yellow),
-                       text("=Overview ") | color(Color::GrayDark),
-                       text("2") | color(Color::Yellow),
-                       text("=Engines ") | color(Color::GrayDark),
-                       text("3") | color(Color::Yellow),
-                       text("=Processes ") | color(Color::GrayDark),
-                       text("4") | color(Color::Yellow),
-                       text("=Power ") | color(Color::GrayDark),
-                       text("5") | color(Color::Yellow),
-                       text("=Thermal ") | color(Color::GrayDark),
-                       text("| ") | color(Color::GrayDark),
-                       text("↑↓") | color(Color::Yellow),
-                       text("=Scroll ") | color(Color::GrayDark),
-                       text("h") | color(Color::Yellow),
-                       text("=Help ") | color(Color::GrayDark),
-                       text("q") | color(Color::Yellow),
-                       text("=Quit") | color(Color::GrayDark)})};
-  }
+  // Key hints: only include when stdout is a terminal
+  if (isatty(fileno(stdout))) {
+    Elements key_hints;
+    if (state.show_help) {
+      key_hints = {
+          text("📋 Key Bindings:") | bold | color(Color::White),
+          hbox({text("1-5") | color(Color::Yellow),
+                text(": Switch views  ") | color(Color::GrayDark),
+                text("↑↓") | color(Color::Yellow),
+                text(": Scroll  ") | color(Color::GrayDark),
+                text("h") | color(Color::Yellow),
+                text(": Toggle help  ") | color(Color::GrayDark),
+                text("q/ESC") | color(Color::Yellow),
+                text(": Quit") | color(Color::GrayDark)}),
+          text("Views: 1=Overview 2=Engines 3=Processes 4=Power 5=Thermal") |
+              color(Color::GrayDark)};
+    } else {
+      key_hints = {hbox({text("Views: ") | color(Color::GrayDark),
+                         text("1") | color(Color::Yellow),
+                         text("=Overview ") | color(Color::GrayDark),
+                         text("2") | color(Color::Yellow),
+                         text("=Engines ") | color(Color::GrayDark),
+                         text("3") | color(Color::Yellow),
+                         text("=Processes ") | color(Color::GrayDark),
+                         text("4") | color(Color::Yellow),
+                         text("=Power ") | color(Color::GrayDark),
+                         text("5") | color(Color::Yellow),
+                         text("=Thermal ") | color(Color::GrayDark),
+                         text("| ") | color(Color::GrayDark),
+                         text("↑↓") | color(Color::Yellow),
+                         text("=Scroll ") | color(Color::GrayDark),
+                         text("h") | color(Color::Yellow),
+                         text("=Help ") | color(Color::GrayDark),
+                         text("q") | color(Color::Yellow),
+                         text("=Quit") | color(Color::GrayDark)})};
+    }
 
-  main_content.push_back(notflex(vbox(std::move(key_hints))) |
-                         size(HEIGHT, EQUAL, state.show_help ? 3 : 1) |
-                         notflex | border | color(Color::Blue));
+    main_content.push_back(notflex(vbox(std::move(key_hints))) |
+                           size(HEIGHT, EQUAL, state.show_help ? 3 : 1) |
+                           notflex | border | color(Color::Blue));
+  }
 
   Element root = vbox(std::move(main_content));
   return root;
@@ -789,6 +895,8 @@ void usage() {
       {"device ID",
        "Device ID to query. Can accept #, BDF, PCI-ID, /dev/dri/*."},
       {"help", "This text."},
+      {"mode <view>",
+       "Set initial view mode: overview|engines|processes|power|thermal."},
       {"no-ansi", "Disable ANSI/colors and force unicode box output."},
       {"wait-time <ms>",
        "Wait time in milliseconds for sensor polling (default 1100)."},
@@ -824,6 +932,7 @@ int main(int argc, char *argv[]) {
   bool listDevices = true;
   bool one_shot = false;
   bool no_ansi = false;
+  std::string start_mode;
   int wait_ms = 1100;
   arg_search_t argSearch;
 
@@ -845,6 +954,9 @@ int main(int argc, char *argv[]) {
       showInfo = true;
     } else if (arg == "--one-shot") {
       one_shot = true;
+    } else if (arg == "--mode" && i + 1 < argc) {
+      start_mode = argv[i + 1];
+      i++;
     } else if (arg == "--no-ansi") {
       no_ansi = true;
     } else if (arg == "--wait-time" && i + 1 < argc) {
@@ -929,6 +1041,30 @@ int main(int argc, char *argv[]) {
   // Screen sized to 80xN (unicode box-drawing characters, no ANSI/color
   // escapes) so the output can be piped to less/files etc.
   UIState state;
+  // If the user passed --mode, set the starting view
+  if (!start_mode.empty()) {
+    if (start_mode == "overview" || start_mode == "OVERVIEW" ||
+        start_mode == "0" || start_mode == "1") {
+      state.view_mode = ViewMode::OVERVIEW;
+    } else if (start_mode == "engines" || start_mode == "ENGINES" ||
+               start_mode == "2") {
+      state.view_mode = ViewMode::ENGINES;
+    } else if (start_mode == "processes" || start_mode == "PROCESSES" ||
+               start_mode == "3") {
+      state.view_mode = ViewMode::PROCESSES;
+    } else if (start_mode == "power" || start_mode == "POWER" ||
+               start_mode == "4") {
+      state.view_mode = ViewMode::POWER;
+    } else if (start_mode == "thermal" || start_mode == "THERMAL" ||
+               start_mode == "5") {
+      state.view_mode = ViewMode::THERMAL;
+    } else {
+      std::cerr << "Unknown mode: " << start_mode
+                << "; valid: overview|engines|processes|power|thermal"
+                << std::endl;
+      return 1;
+    }
+  }
   if (!isatty(fileno(stdout)) || no_ansi) {
     // Ensure UTF-8 locale so box-drawing characters render correctly
     setlocale(LC_ALL, "");
@@ -1044,6 +1180,8 @@ int main(int argc, char *argv[]) {
         auto terminal = ftxui::Terminal::Size();
         int screen_width = terminal.dimx;
         int screen_height = terminal.dimy;
+        (void)screen_width;
+        (void)screen_height;
 
         // Auto refresh every second
         if (refresh_timer()) {
@@ -1133,28 +1271,46 @@ int main(int argc, char *argv[]) {
                     text("SUB-DEV") | bold | size(WIDTH, EQUAL, 10)}) |
               color(Color::White));
 
+          // Only show aggregate engines (names ending with ALL)
+          std::regex all_re("ALL$");
+
+          // Build list of engine names to compute and strip longest common
+          // prefix for nicer display
+          std::vector<std::string> engine_names;
+          engine_names.reserve(device->getEngineCount());
           for (uint32_t i = 0; i < device->getEngineCount(); ++i) {
             auto engine = device->getEngine(i);
+            engine_names.push_back(
+                engine_type_to_str(engine->getEngineProperties()->type));
+          }
+          std::string lcp = longest_common_prefix(engine_names);
+
+          for (uint32_t i = 0; i < device->getEngineCount(); ++i) {
+            auto engine = device->getEngine(i);
+            std::string name = engine_names[i];
+            if (!lcp.empty() && name.rfind(lcp, 0) == 0) {
+              name = name.substr(lcp.size());
+            }
+            if (!std::regex_search(name, all_re))
+              continue;
             double util = engine->getEngineUtilization();
             auto subdev =
                 engine->getEngineProperties()->onSubdevice
                     ? std::to_string(engine->getEngineProperties()->subdeviceId)
                     : "N/A";
 
-            engine_rows.push_back(hbox(
-                {notflex(text(ellipses(engine_type_to_str(
-                                           engine->getEngineProperties()->type),
-                                       30, true)) |
-                         size(WIDTH, EQUAL, 30) | color(Color::Cyan)),
-                 separator(),
-                 xflex_grow(gauge(util / 100.0) |
-                            color(get_percentage_color(util))),
-                 notflex(text(" " + std::to_string((int)util) + "%") |
-                         size(WIDTH, EQUAL, 5) |
-                         color(get_percentage_color(util))),
-                 separator(),
-                 notflex(text(subdev) | size(WIDTH, EQUAL, 10) |
-                         color(Color::GrayDark))}));
+            engine_rows.push_back(
+                hbox({notflex(text(ellipses(name, 30, true)) |
+                              size(WIDTH, EQUAL, 30) | color(Color::Cyan)),
+                      separator(),
+                      xflex_grow(gauge(util / 100.0) |
+                                 color(get_percentage_color(util))),
+                      notflex(text(" " + std::to_string((int)util) + "%") |
+                              size(WIDTH, EQUAL, 5) |
+                              color(get_percentage_color(util))),
+                      separator(),
+                      notflex(text(subdev) | size(WIDTH, EQUAL, 10) |
+                              color(Color::GrayDark))}));
           }
 
           main_content.push_back(
@@ -1162,94 +1318,49 @@ int main(int argc, char *argv[]) {
                     vbox(std::move(engine_rows))}) |
               border);
 
-          // Top processes
-          Elements proc_rows;
-          proc_rows.push_back(
-              hbox({text("PID") | bold | size(WIDTH, EQUAL, 8), separator(),
-                    text("COMMAND") | bold | flex, separator(),
-                    text("MEMORY") | bold | size(WIDTH, EQUAL, 12), separator(),
-                    text("SHARED") | bold | size(WIDTH, EQUAL, 12)}) |
-              color(Color::White));
-
-          int proc_limit =
-              std::min((int)(screen_height - (6 + device->getEngineCount() + 4 +
-                                              (state.show_help ? 5 : 3) + 2)),
-                       (int)device->getProcessCount());
-          for (int i = 0; i < proc_limit; ++i) {
+          // Process summary: total processes, total memory used, top 3 by
+          // memory
+          uint32_t proc_count = device->getProcessCount();
+          uint64_t total_proc_mem = 0;
+          std::vector<std::pair<uint64_t, std::string>> proc_mem_list;
+          for (uint32_t i = 0; i < proc_count; ++i) {
             auto proc = device->getProcessInfo(i);
-            auto mem_pct =
-                mem.size > 0
-                    ? (double)proc->getProcessState()->memSize / mem.size * 100
-                    : 0.0;
+            auto ps = proc->getProcessState();
+            total_proc_mem += ps->memSize;
+            proc_mem_list.emplace_back(ps->memSize, proc->getCommandLine());
+          }
+          std::sort(proc_mem_list.begin(), proc_mem_list.end(),
+                    [](auto &a, auto &b) { return a.first > b.first; });
 
-            proc_rows.push_back(hbox(
-                {text(std::to_string(proc->getProcessState()->processId)) |
-                     size(WIDTH, EQUAL, 8) | color(Color::Yellow),
-                 separator(),
-                 text(ellipses(proc->getCommandLine(), screen_width - 34)) |
-                     flex | color(Color::White),
-                 separator(),
-                 text(format_bytes(proc->getProcessState()->memSize)) |
-                     size(WIDTH, EQUAL, 12) |
-                     color(get_percentage_color(mem_pct)),
-                 separator(),
-                 text(format_bytes(proc->getProcessState()->sharedSize)) |
-                     size(WIDTH, EQUAL, 12) | color(Color::GrayDark)}));
+          // Compact single-line process summary: Count | Total mem | Top 3
+          Elements summary_line;
+          std::ostringstream ss2;
+          ss2 << "Processes: " << proc_count
+              << " | Total mem: " << format_bytes(total_proc_mem);
+          summary_line.push_back(text(ss2.str()) | color(Color::White));
+
+          Elements top_processes;
+          int top_n2 = std::min((size_t)3, proc_mem_list.size());
+          for (int i = 0; i < top_n2; ++i) {
+            std::ostringstream ss2;
+            ss2 << ellipses(proc_mem_list[i].second, screen_width) << " ("
+                << format_bytes(proc_mem_list[i].first) << ")";
+            top_processes.push_back(text(ss2.str()) | color(Color::Cyan));
           }
 
           main_content.push_back(
-              vbox({text("📊 Top Processes") | bold | color(Color::Green),
-                    vbox(std::move(proc_rows)) | vscroll_indicator | frame}) |
+              vbox({
+                  hbox(text("📊 Process Summary ") | bold | color(Color::Green),
+                       std::move(summary_line)),
+                  vbox(std::move(top_processes)),
+              }) |
               border);
           break;
         }
 
         case ViewMode::ENGINES: {
-          Elements engine_detail;
-          engine_detail.push_back(
-              hbox({text("ENGINE") | bold | size(WIDTH, EQUAL, 15), separator(),
-                    text("UTILIZATION") | bold | flex, separator(),
-                    text("SUB-DEVICE") | bold | size(WIDTH, EQUAL, 15),
-                    separator(),
-                    text("STATUS") | bold | size(WIDTH, EQUAL, 15)}) |
-              color(Color::White));
-
-          int visible_engines = 15;
-          int start = state.engine_offset;
-          int end =
-              std::min(start + visible_engines, (int)device->getEngineCount());
-
-          for (int i = start; i < end; ++i) {
-            auto engine = device->getEngine(i);
-            double util = engine->getEngineUtilization();
-            auto status = util > 0 ? "ACTIVE" : "IDLE";
-            auto status_color = util > 0 ? Color::Green : Color::GrayDark;
-
-            engine_detail.push_back(hbox(
-                {notflex(text(engine_type_to_str(
-                             engine->getEngineProperties()->type)) |
-                         size(WIDTH, EQUAL, 15) | color(Color::Cyan)),
-                 separator(),
-                 xflex_grow(gauge(util / 100.0) |
-                            color(get_percentage_color(util))),
-                 notflex(text(" " + std::to_string((int)util) + "%") |
-                         size(WIDTH, EQUAL, 5) |
-                         color(get_percentage_color(util))),
-                 separator(),
-                 notflex(text(engine->getEngineProperties()->onSubdevice
-                                  ? std::to_string(engine->getEngineProperties()
-                                                       ->subdeviceId)
-                                  : "N/A") |
-                         size(WIDTH, EQUAL, 15) | color(Color::GrayDark)),
-                 separator(),
-                 notflex(text(status) | size(WIDTH, EQUAL, 15) |
-                         color(status_color))}));
-          }
-
-          main_content.push_back(
-              vbox({text("🔧 Engine Details") | bold | color(Color::Green),
-                    vbox(std::move(engine_detail))}) |
-              border);
+          // Use shared builder for engine details
+          main_content.push_back(build_engine_details(device, state, 15, 15));
           break;
         }
 
@@ -1310,13 +1421,10 @@ int main(int argc, char *argv[]) {
         case ViewMode::THERMAL: {
           Elements thermal_detail;
           thermal_detail.push_back(
-              hbox({text("SENSOR") | bold | size(WIDTH, LESS_THAN, 15),
-                    text(" "),
-                    text("TEMPERATURE") | bold | size(WIDTH, LESS_THAN, 20),
-                    text(" "),
-                    text("STATUS") | bold | size(WIDTH, LESS_THAN, 15),
-                    text(" "),
-                    text("GRAPH") | bold | size(WIDTH, LESS_THAN, 30)}) |
+              hbox({text("SENSOR") | bold | size(WIDTH, EQUAL, 10), text(" "),
+                    text("TEMPERATURE") | bold | size(WIDTH, EQUAL, 11),
+                    text(" "), text("STATUS") | bold | size(WIDTH, EQUAL, 10),
+                    text(" "), text("GRAPH") | bold | flex}) |
               color(Color::White));
 
           for (uint32_t i = 0; i < device->getTemperatureCount(); ++i) {
@@ -1331,13 +1439,12 @@ int main(int argc, char *argv[]) {
 
             thermal_detail.push_back(hbox(
                 {text("Sensor " + std::to_string(i + 1)) |
-                     size(WIDTH, LESS_THAN, 15) | color(Color::Cyan),
+                     size(WIDTH, EQUAL, 10) | color(Color::Cyan),
                  separator(),
                  text(std::to_string((int)temp) + "°C") |
-                     size(WIDTH, LESS_THAN, 20) | color(get_temp_color(temp)),
+                     size(WIDTH, EQUAL, 11) | color(get_temp_color(temp)),
                  separator(),
-                 text(status) | size(WIDTH, LESS_THAN, 15) |
-                     color(status_color),
+                 text(status) | size(WIDTH, EQUAL, 10) | color(status_color),
                  separator(),
                  xflex_grow(gauge(temp_ratio) | color(get_temp_color(temp)))}));
           }
@@ -1420,9 +1527,9 @@ int main(int argc, char *argv[]) {
         }
         }
 
-        // Key hints
+        // Key hints. Hide hints entirely when stdout isn't a TTY (non-tty)
         Elements key_hints;
-        if (state.show_help) {
+        if ((isatty(fileno(stdout)) && state.show_help) || state.show_help) {
           key_hints = {
               text("📋 Key Bindings:") | bold | color(Color::White),
               hbox({text("1-5") | color(Color::Yellow),
@@ -1457,9 +1564,12 @@ int main(int argc, char *argv[]) {
                              text("=Quit") | color(Color::GrayDark)})};
         }
 
-        main_content.push_back(notflex(vbox(std::move(key_hints))) |
-                               size(HEIGHT, EQUAL, state.show_help ? 3 : 1) |
-                               notflex | border | color(Color::Blue));
+        // Only show the key hints/footer when stdout is a terminal
+        if (isatty(fileno(stdout))) {
+          main_content.push_back(notflex(vbox(std::move(key_hints))) |
+                                 size(HEIGHT, EQUAL, state.show_help ? 3 : 1) |
+                                 notflex | border | color(Color::Blue));
+        }
 
         Element root = vbox(std::move(main_content));
         last_rendered_element = root;
