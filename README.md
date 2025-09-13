@@ -257,25 +257,25 @@ NOTE: See [Security](#security) for information on running ze-monitor with requi
 Output:
 
 ```bash
-$ sudo ze-monitor --device 2 --interval 500
-Device: 8086:E20B (Intel(R) Graphics [0xe20b])
-Total Memory:  12809404416
-Free memory:  [#  55% ############################                              ]
-Power usage: 165.0W
-------------------------------------------------------------------------------------------
-   PID COMMAND-LINE
-       USED MEMORY       SHARED MEMORY     ENGINE FLAGS
-------------------------------------------------------------------------------------------
-     1 /sbin/init splash
-       MEM: 106102784    SHR: 100663296    FLAGS: RENDER COMPUTE
-  1606 /usr/lib/systemd/systemd-logind
-       MEM: 106102784    SHR: 100663296    FLAGS: RENDER COMPUTE
-  5164 /usr/bin/gnome-shell
-       MEM: 530513920    SHR: 503316480    FLAGS: RENDER COMPUTE
-  5237 /usr/bin/Xwayland :1024 -rootless -nores...isplayfd 6 -initfd 7 -byteswappedclients
-       MEM: 0            SHR: 0            FLAGS:
- 40480 python chat.py
-       MEM: 5544226816   SHR: 0            FLAGS: DMA COMPUTE
+$ sudo ze-monitor --device 1 --mode overview --no-ansi
+╭──────────────────────────────────────────────────────────────────────────────╮
+│🚀 ZE-MONITOR | Intel(R) Arc(TM) B580 Graphics | View: Overview               │
+│Memory: ██████████                            27% (3.3 GB/11.9 GB)│ Temp: 53°C│
+╰──────────────────────────────────────────────────────────────────┴───────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│🔧 Engine Utilization                                                         │
+│ENGINE                  │UTILIZATION          │SUB-DEVICE     │STATUS         │
+│ALL                     │██▌              16% │N/A            │ACTIVE         │
+│COMPUTE_ALL             │█████████████▊   86% │N/A            │ACTIVE         │
+│MEDIA_ALL               │                 0%  │N/A            │IDLE           │
+│COPY_ALL                │█████████▉       62% │N/A            │ACTIVE         │
+│RENDER_ALL              │                 0%  │N/A            │IDLE           │
+╰────────────────────────┴─────────────────────┴───────────────┴───────────────╯
+╭──────────────────┬─────────────┬─────────────────────────────────────────────╮
+│📊 Process Summary│Processes: 71│Total mem:22.7 GB                            │
+│PID     │COMMAND                      │MEMORY      │SHARED      │ENGINES      │
+│1299621 │/voicebot/.venv/bin/python3..│1.8 GB      │0.0 B       │DMA COMPUTE  │
+╰────────┴─────────────────────────────┴────────────┴────────────┴─────────────╯
 ```
 
 If you pass `--one-shot`, statistics will be gathered, displayed, and then ze-monitor will exit.
