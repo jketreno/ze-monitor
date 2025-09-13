@@ -4,11 +4,14 @@ build() {
     echo "Building $(date)"
     cd build
     if cmake .. && make -j $(nproc) && cpack; then
+	ret=0
         echo "Build successful"
     else
+	ret=$?
         echo "Build failed"
     fi
     cd ..
+    return $ret
 }
 
 # Directory to watch
@@ -20,7 +23,7 @@ fi
 
 build 2>&1 | tee "${LOG_FILE}"
 if [[ "$1" == "" ]]; then
-    exit
+    exit $?
 fi
 
 # Use inotifywait to monitor the directory for changes in *.cpp, *.h, and Makefile
