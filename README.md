@@ -6,7 +6,7 @@ from the command line, similar to 'top'.
 
 # Installation
 
-Requires Ubuntu Oracular 24.10.
+Requires Ubuntu Oracular 24.10 or newer.
 
 ## Easiest
 
@@ -29,7 +29,7 @@ This will download the ze-monitor GitHub, install it, and add the current
 user to the 'ze-monitor' group to allow running the utility:
 
 ```bash
-version=0.3.0-1
+version=0.7.0-1
 wget https://github.com/jketreno/ze-monitor/releases/download/v${version}/ze-monitor-${version}_amd64.deb
 sudo dpkg -i ze-monitor-${version}_amd64.deb
 sudo usermod -a -G ze-monitor $(whoami)
